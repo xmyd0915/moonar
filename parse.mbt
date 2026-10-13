@@ -54,6 +54,7 @@ fn number_field(
 fn parse_records(
   data : Bytes,
   max_members : Int,
+  max_name_bytes : Int,
 ) -> Archive raise InvalidArchive {
   if data.length() >= 8 && data[:8] == b"!<thin>\n"[:] {
     reject("AR007", 0, "thin archives are not supported")
@@ -194,6 +195,17 @@ fn parse_records(
         }
     }
   }
+  let mut total_name_bytes = 0
+  for entry in records {
+    if entry.name.length() > max_name_bytes - total_name_bytes {
+      reject(
+        "AR008",
+        entry.header_offset,
+        "expanded member-name byte limit exceeded",
+      )
+    }
+    total_name_bytes += entry.name.length()
+  }
   { data, records, }
 }
 
@@ -204,8 +216,9 @@ pub fn parse(
   input : Bytes,
   max_members? : Int = 100000,
   max_bytes? : Int = 67108864,
+  max_name_bytes? : Int = 67108864,
 ) -> Result[Archive, ParseError] {
-  if max_members < 0 || max_bytes < 0 {
+  if max_members < 0 || max_bytes < 0 || max_name_bytes < 0 {
     return Err({
       code: "AR008",
       offset: 0,
@@ -219,7 +232,7 @@ pub fn parse(
       message: "archive byte limit exceeded",
     })
   }
-  Ok(parse_records(input, max_members)) catch {
+  Ok(parse_records(input, max_members, max_name_bytes)) catch {
     InvalidArchive(error) => Err(error)
   }
 }

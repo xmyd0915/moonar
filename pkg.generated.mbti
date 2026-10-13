@@ -8,7 +8,7 @@ import {
 // Values
 pub fn compare(Archive, Archive) -> Comparison
 
-pub fn parse(Bytes, max_members? : Int, max_bytes? : Int) -> Result[Archive, ParseError]
+pub fn parse(Bytes, max_members? : Int, max_bytes? : Int, max_name_bytes? : Int) -> Result[Archive, ParseError]
 
 // Errors
 
