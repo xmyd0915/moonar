@@ -5,7 +5,7 @@
 MoonAr is a new ar container library and CLI. It reads archive records and
 compares member contents, names, order and metadata. It does not parse pkg-config
 files or reuse MoonPkgConfig code or Git history. MoonPatch's JSON patch proposal
-is also unrelated. No local MoonGitAttrs checkout was found in F:/jav.
+is also unrelated. No local MoonGitAttrs checkout was found in the workspace.
 
 Initial support: ordinary GNU/BSD archives, including long names and opaque symbol
 tables. No writer, thin-archive file loading, object-code/ABI analysis, archive
@@ -77,9 +77,38 @@ This is a plan, not a claim that ten commits have been made or are already valid
 More or fewer implementation stages may be needed; the application must not be
 sent until there are ten substantive, reviewable commits.
 
-Public GitHub repository creation and the first push need the participant's
-confirmation. Only the xmyd0915 account is in scope. Forms and private identity or
-bank information remain with the participant.
+The participant authorized public repository creation and the first push on
+October 13. The independent repository is `xmyd0915/moonar`. Only that account is
+in scope. Forms and private identity or bank information remain with the
+participant.
+
+## Verification findings
+
+- GNU ar 2.30 on Windows verified long names, duplicate records, payload boundaries
+  and real C object archives. Deterministic/non-deterministic archives differed in
+  metadata; rebuilding the C function changed its payload.
+- The first Linux CI run passed compiler and unit-test checks, GNU ar 2.42 and
+  LLVM 18.1.3 GNU/BSD comparisons. Its Darwin comparison failed because the test
+  incorrectly assumed the archived size equalled the source file size. LLVM's
+  writer includes alignment bytes in Darwin payloads. The oracle now checks
+  declared bytes against the archiver's own extraction and print output.
+- GNU ar 2.30 on Windows translates LF on standard output in the object-file
+  sample. The test uses extraction into a generated scratch directory for binary
+  comparisons, without normalizing the archive bytes.
+- A consumer-package check showed `pub struct Archive` exposed its mutable record
+  array despite preventing field replacement. `Archive` is now abstract, keeping
+  validated offsets and storage inside the library.
+- Parsing tests include all truncations of a mixed archive, byte mutations and
+  limits on expanded names. These are regression tests, not a proof that every
+  malformed input or resource-use pattern has been covered.
+- GNU name tables are scanned for validity but only referenced entries are kept
+  in the lookup map, avoiding one allocation for every unused name.
+
+The corrected GNU/LLVM comparison and both CI platforms passed at commit
+`10c2491`. Later commits must pass their own runs before release.
+
+Check the repository's current CI run for the result at a particular commit;
+this log does not turn a failed or pending run into a pass.
 
 ## AI assistance and verification
 
