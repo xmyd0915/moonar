@@ -47,3 +47,15 @@ test "BSD name lengths and embedded NUL are validated" {
   assert_eq(error_code(b"!<arch>\n" + record("#1/4", b"a\x00bc")), "AR006")
   assert_eq(error_code(b"!<arch>\n" + record("#1/2", b"\x00\x00")), "AR006")
 }
+
+///|
+test "Darwin alignment inside the declared member size remains payload" {
+  let archive = parsed(
+    b"!<arch>\n" + record("#1/12", b"short.txt\x00\x00\x00abc\n\n\n\n\n"),
+  )
+  let entry = archive.get_member(0).unwrap()
+  assert_eq(entry.name, b"short.txt")
+  assert_eq(entry.data_offset, 80)
+  assert_eq(entry.size, 8)
+  assert_eq(archive.member_bytes(0), Some(b"abc\n\n\n\n\n"))
+}
