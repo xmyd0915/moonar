@@ -1,0 +1,150 @@
+"""Compare MoonAr with independent archivers, using only generated test data.
+
+Requires Python 3.9+, a built MoonAr executable, GNU ar and a C compiler.
+LLVM is optional locally and required in the Linux CI job.
+"""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+
+def run(args, cwd, expected=0):
+    result = subprocess.run(
+        [str(arg) for arg in args], cwd=cwd, capture_output=True, check=False
+    )
+    if result.returncode != expected:
+        raise AssertionError(
+            f"{args!r}: exit {result.returncode}, expected {expected}\n"
+            + result.stdout.decode("utf-8", errors="replace")
+            + result.stderr.decode("utf-8", errors="replace")
+        )
+    return result.stdout
+
+
+def report(exe, cwd, command, *paths, expected=0):
+    return json.loads(run([exe, command, "--json", *paths], cwd, expected))
+
+
+def regular(document):
+    return [entry for entry in document["members"] if entry["kind"] == "regular"]
+
+
+def check_inventory(exe, archiver, cwd, archive, files):
+    document = report(exe, cwd, "inspect", archive)
+    entries = regular(document)
+    actual_names = [bytes.fromhex(entry["name_hex"]) for entry in entries]
+    listed_names = run([archiver, "t", archive], cwd).splitlines()
+    expected_names = [Path(path).name.encode("ascii") for path in files]
+    assert actual_names == listed_names == expected_names, (archive, document)
+    data = (cwd / archive).read_bytes()
+    assert document["byte_length"] == len(data)
+    for entry, path in zip(entries, files):
+        original = (cwd / path).read_bytes()
+        start, size = entry["data_offset"], entry["size"]
+        assert size == len(original), (archive, path, entry)
+        assert data[start:start + size] == original, (archive, path, entry)
+    report(exe, cwd, "check", archive)
+    return document
+
+
+def check_format(exe, archiver, cwd, label, format_args):
+    files = [
+        "short.txt", "a_long_member_name_for_testing.txt", "with space.txt",
+        "empty", "one/same.txt", "two/same.txt",
+    ]
+    archive = label + ".a"
+    # q preserves duplicate basenames, unlike replacement operations.
+    run([archiver, *format_args, "qcDS", archive, *files], cwd)
+    check_inventory(exe, archiver, cwd, archive, files)
+    same = report(exe, cwd, "diff", archive, archive)
+    assert same["bytes_equal"] and not same["changes"] and not same["order_changed"]
+
+    # Reference listing and original bytes remain independent of MoonAr.
+    ordered = ["short.txt", "empty"]
+    run([archiver, *format_args, "qcDS", label + "-base.a", *ordered], cwd)
+    run([archiver, *format_args, "qcDS", label + "-reversed.a", *reversed(ordered)], cwd)
+    run([archiver, *format_args, "qcDS", label + "-inserted.a", "with space.txt", *ordered], cwd)
+    diff = report(exe, cwd, "diff", label + "-base.a", label + "-reversed.a", expected=1)
+    assert diff["order_changed"] and not diff["changes"], diff
+    diff = report(exe, cwd, "diff", label + "-base.a", label + "-inserted.a", expected=1)
+    assert not diff["order_changed"], diff
+    assert len(diff["changes"]) == 1 and diff["changes"][0]["change"] == "added", diff
+
+    (cwd / "one/same.txt").write_bytes(b"updated first occurrence")
+    run([archiver, *format_args, "qcDS", label + "-changed.a", *files], cwd)
+    diff = report(exe, cwd, "diff", archive, label + "-changed.a", expected=1)
+    changes = [c for c in diff["changes"] if c["member_kind"] == "regular"]
+    assert len(changes) == 1, diff
+    assert changes[0]["occurrence"] == 1 and changes[0]["payload_changed"], diff
+    assert bytes.fromhex(changes[0]["name_hex"]) == b"same.txt", diff
+    (cwd / "one/same.txt").write_bytes(b"first")
+    print(f"PASS {label}: names, payload offsets, duplicates, order, addition, modification")
+
+
+def check_objects(exe, archiver, cc, cwd):
+    source = cwd / "sample.c"
+    source.write_text("int moonar_sample(void) { return 7; }\n", encoding="ascii")
+    obj = "long_object_name_for_symbol_index.o"
+    run([cc, "-c", "sample.c", "-o", obj], cwd)
+    os.utime(cwd / obj, (1700000000, 1700000000))
+    run([archiver, "rcsD", "deterministic.a", obj], cwd)
+    run([archiver, "rcsU", "timestamped.a", obj], cwd)
+    document = check_inventory(exe, archiver, cwd, "deterministic.a", [obj])
+    assert any(e["kind"] == "symbol_table" for e in document["members"]), document
+    diff = report(exe, cwd, "diff", "deterministic.a", "timestamped.a", expected=1)
+    assert not diff["order_changed"] and diff["changes"], diff
+    assert all(c["metadata_changed"] and not c["payload_changed"] for c in diff["changes"]), diff
+    source.write_text("int moonar_sample(void) { return 9; }\n", encoding="ascii")
+    run([cc, "-c", "sample.c", "-o", obj], cwd)
+    run([archiver, "rcsD", "recompiled.a", obj], cwd)
+    diff = report(exe, cwd, "diff", "deterministic.a", "recompiled.a", expected=1)
+    assert any(c["member_kind"] == "regular" and c["payload_changed"] for c in diff["changes"]), diff
+    run([archiver, "rcsT", "thin.a", obj], cwd)
+    assert report(exe, cwd, "check", "thin.a", expected=1)["error"]["code"] == "AR007"
+    truncated = (cwd / "deterministic.a").read_bytes()[:-1]
+    (cwd / "truncated.a").write_bytes(truncated)
+    assert report(exe, cwd, "check", "truncated.a", expected=1)["error"]["code"] in {"AR002", "AR003"}
+    assert report(exe, cwd, "diff", "deterministic.a", "truncated.a", expected=2)["input"] == "truncated.a"
+    assert report(exe, cwd, "inspect", "missing.a", expected=2)["error"]["code"] == "IO001"
+    print("PASS GNU objects: symbol index, metadata-only change, recompile, thin/truncated input, I/O exits")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--moonar", required=True, type=Path)
+    parser.add_argument("--ar", default=shutil.which("ar"))
+    parser.add_argument("--cc", default=shutil.which("cc") or shutil.which("gcc"))
+    parser.add_argument("--llvm-ar", default=shutil.which("llvm-ar"))
+    parser.add_argument("--require-llvm", action="store_true")
+    args = parser.parse_args()
+    if not args.ar or not args.cc or (args.require_llvm and not args.llvm_ar):
+        parser.error("GNU ar and C compiler required; --require-llvm also requires llvm-ar")
+    exe = args.moonar.resolve(strict=True)
+    with tempfile.TemporaryDirectory(prefix="moonar-verify-") as temporary:
+        cwd = Path(temporary)
+        print(run([args.ar, "--version"], cwd).decode(errors="replace").splitlines()[0])
+        for name, data in {
+            "short.txt": b"abc", "a_long_member_name_for_testing.txt": b"long\x00name\xff",
+            "with space.txt": b"spaces", "empty": b"", "one/same.txt": b"first",
+            "two/same.txt": b"second",
+        }.items():
+            path = cwd / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        check_format(exe, args.ar, cwd, "gnu", [])
+        check_objects(exe, args.ar, args.cc, cwd)
+        if args.llvm_ar:
+            print(run([args.llvm_ar, "--version"], cwd).decode(errors="replace").splitlines()[0])
+            for fmt in ["gnu", "bsd", "darwin"]:
+                check_format(exe, args.llvm_ar, cwd, "llvm-" + fmt, ["--format=" + fmt])
+        else:
+            print("SKIP LLVM: not installed (CI requires it)")
+
+
+if __name__ == "__main__":
+    main()
