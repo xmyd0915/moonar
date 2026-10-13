@@ -4,8 +4,9 @@ MoonAr reads and compares Unix ar archives in MoonBit. It is intended for build
 tools that need to inspect static libraries without spawning an archiver.
 
 Development is in progress. The first working stage reads ordinary short-name
-members, retains order and duplicate names, and reports malformed headers and
-truncated data. GNU/BSD long names, comparison reports and the CLI are planned.
+members and GNU long-name tables, retains order and duplicate names, and reports
+malformed headers and truncated data. BSD long names, comparison reports and the
+CLI are planned.
 
 The scope is the archive container. MoonAr does not interpret object code, check
 ABI compatibility, link programs, or decide whether an archive is safe to execute.

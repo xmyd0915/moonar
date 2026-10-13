@@ -62,6 +62,8 @@ fn parse_records(
     reject("AR001", 0, "expected ar archive magic")
   }
   let records : Array[Member] = []
+  let pending_names : Array[(Int, Int)] = []
+  let mut long_names : Map[Int, Bytes]? = None
   let mut offset = 8
   while offset < data.length() {
     if records.length() >= max_members {
@@ -81,22 +83,36 @@ fn parse_records(
     if raw_name.is_empty() {
       reject("AR006", offset, "empty member name")
     }
-    if raw_name == b"//" ||
-      raw_name.has_prefix(b"#1/"[:]) ||
-      (
-        raw_name.has_prefix(b"/"[:]) &&
-        raw_name != b"/" &&
-        raw_name != b"/SYM64/"
-      ) {
-      reject("AR007", offset, "extended member names are not yet supported")
+    if raw_name.has_prefix(b"#1/"[:]) {
+      reject("AR007", offset, "BSD embedded names are not yet supported")
     }
     let kind = if raw_name == b"/" ||
       raw_name == b"/SYM64/" ||
       raw_name == b"__.SYMDEF" ||
       raw_name == b"__.SYMDEF SORTED" {
       SymbolTable
+    } else if raw_name == b"//" {
+      NameTable
     } else {
       Regular
+    }
+    if kind == Regular && raw_name.has_prefix(b"/"[:]) {
+      for i = 1; i < raw_name.length(); i = i + 1 {
+        if raw_name[i] < b'0' || raw_name[i] > b'9' {
+          reject("AR006", offset + i, "invalid GNU name reference")
+        }
+      }
+      let reference = number_field(
+          data,
+          offset + 1,
+          raw_name.length() - 1,
+          10,
+          false,
+          2147483647L,
+        )
+        .unwrap()
+        .to_int()
+      pending_names.push((records.length(), reference))
     }
     let name = if kind == Regular && raw_name.has_suffix(b"/"[:]) {
       raw_name[:raw_name.length() - 1].to_owned()
@@ -136,6 +152,12 @@ fn parse_records(
     if padding == 1 && (end == data.length() || data[end] != b'\n') {
       reject("AR003", end, "missing or invalid alignment byte")
     }
+    if kind == NameTable {
+      if long_names is Some(_) {
+        reject("AR006", offset, "more than one GNU name table")
+      }
+      long_names = Some(gnu_names(data, data_offset, stored_size))
+    }
     records.push({
       name,
       kind,
@@ -146,6 +168,27 @@ fn parse_records(
       metadata: { timestamp, uid, gid, mode, },
     })
     offset = end + padding
+  }
+  for (index, reference) in pending_names {
+    let entry = records[index]
+    match long_names {
+      None =>
+        reject(
+          "AR006",
+          entry.header_offset,
+          "GNU name reference has no name table",
+        )
+      Some(names) =>
+        match names.get(reference) {
+          None =>
+            reject(
+              "AR006",
+              entry.header_offset,
+              "GNU name reference is not an entry boundary",
+            )
+          Some(name) => records[index] = { ..entry, name, }
+        }
+    }
   }
   { data, records, }
 }
