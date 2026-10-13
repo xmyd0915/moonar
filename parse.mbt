@@ -64,7 +64,8 @@ fn parse_records(
   }
   let records : Array[Member] = []
   let pending_names : Array[(Int, Int)] = []
-  let mut long_names : Map[Int, Bytes]? = None
+  let wanted_names : Map[Int, Unit] = Map([])
+  let mut long_table : (Int, Int)? = None
   let mut offset = 8
   while offset < data.length() {
     if records.length() >= max_members {
@@ -102,6 +103,7 @@ fn parse_records(
         .unwrap()
         .to_int()
       pending_names.push((records.length(), reference))
+      wanted_names[reference] = ()
     }
     let mut name = if kind == Regular && raw_name.has_suffix(b"/"[:]) {
       raw_name[:raw_name.length() - 1].to_owned()
@@ -142,10 +144,10 @@ fn parse_records(
       reject("AR003", end, "missing or invalid alignment byte")
     }
     if kind == NameTable {
-      if long_names is Some(_) {
+      if long_table is Some(_) {
         reject("AR006", offset, "more than one GNU name table")
       }
-      long_names = Some(gnu_names(data, data_offset, stored_size))
+      long_table = Some((data_offset, stored_size))
     }
     let mut size = stored_size
     if raw_name.has_prefix(b"#1/"[:]) {
@@ -172,6 +174,10 @@ fn parse_records(
       metadata: { timestamp, uid, gid, mode, },
     })
     offset = end + padding
+  }
+  let long_names = match long_table {
+    Some((start, size)) => Some(gnu_names(data, start, size, wanted_names))
+    None => None
   }
   for (index, reference) in pending_names {
     let entry = records[index]

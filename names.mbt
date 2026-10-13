@@ -1,9 +1,11 @@
 ///|
-// Index each GNU name once. Repeated references must not rescan the whole table.
+// Scan once, retaining only referenced names. A large unused table must not
+// allocate a map entry and byte buffer for every name it happens to contain.
 fn gnu_names(
   data : Bytes,
   start : Int,
   size : Int,
+  wanted : Map[Int, Unit],
 ) -> Map[Int, Bytes] raise InvalidArchive {
   let names : Map[Int, Bytes] = Map([])
   let mut cursor = start
@@ -23,7 +25,9 @@ fn gnu_names(
     if stop == cursor {
       reject("AR006", cursor, "empty GNU long name")
     }
-    names[cursor - start] = data[cursor:stop].to_owned()
+    if wanted.get(cursor - start) is Some(_) {
+      names[cursor - start] = data[cursor:stop].to_owned()
+    }
     cursor = stop + 2
   }
   names

@@ -49,3 +49,19 @@ test "GNU malformed and duplicate name tables fail explicitly" {
     "AR006",
   )
 }
+
+///|
+test "unused GNU names are validated without populating the lookup map" {
+  let table = b"ignored/\n".repeat(10000) + b"used/\n"
+  let wanted : Map[Int, Unit] = Map([(90000, ())])
+  let indexed = gnu_names(table, 0, table.length(), wanted)
+  assert_eq(indexed.length(), 1)
+  assert_eq(indexed.get(90000), Some(b"used"))
+  let archive = parse(
+    b"!<arch>\n" + record("//", table) + record("/90000", b"x"),
+    max_members=2,
+    max_name_bytes=6,
+  ).unwrap()
+  assert_eq(archive.get_member(1).unwrap().name, b"used")
+  assert_eq(archive.member_bytes(1), Some(b"x"))
+}
