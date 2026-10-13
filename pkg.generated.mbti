@@ -13,10 +13,7 @@ pub fn parse(Bytes, max_members? : Int, max_bytes? : Int, max_name_bytes? : Int)
 // Errors
 
 // Types and methods
-pub struct Archive {
-  data : Bytes
-  records : Array[Member]
-} derive(@debug.Debug)
+type Archive derive(@debug.Debug)
 pub fn Archive::byte_length(Self) -> Int
 pub fn Archive::get_member(Self, Int) -> Member?
 pub fn Archive::member_bytes(Self, Int) -> Bytes?

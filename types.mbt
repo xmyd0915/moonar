@@ -30,7 +30,7 @@ pub(all) struct Member {
 
 ///|
 /// An in-memory archive, including special records in physical order.
-pub struct Archive {
+struct Archive {
   data : Bytes
   records : Array[Member]
 } derive(Debug)
