@@ -7,7 +7,7 @@ Development is in progress. The first working stage reads ordinary short-name
 members, GNU long-name tables and BSD embedded names. It retains order and
 duplicate names, reports malformed input, and compares payloads, metadata and
 relative record order. JSON reports retain raw byte names. The CLI provides
-`inspect` and `check`; the comparison command is still in development.
+`inspect`, `check` and `diff`.
 
 The scope is the archive container. MoonAr does not interpret object code, check
 ABI compatibility, link programs, or decide whether an archive is safe to execute.

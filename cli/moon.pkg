@@ -1,5 +1,6 @@
 import {
   "xmyd0915/moonar" @ar,
+  "moonbitlang/core/encoding/utf8",
 }
 
 import {

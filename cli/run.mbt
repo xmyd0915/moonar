@@ -1,6 +1,6 @@
 ///|
 pub fn help() -> String {
-  "MoonAr 0.1.0\nUsage: moonar inspect FILE [--json]\n       moonar check FILE [--json]\n       moonar --help | --version\nOptions: --max-bytes N (default 67108864), --max-members N (default 100000)\nUse -- before filenames beginning with '-'.\nThe CLI loads the file into memory before applying parser limits.\n"
+  "MoonAr 0.1.0\nUsage: moonar inspect FILE [--json]\n       moonar check FILE [--json]\n       moonar diff BEFORE AFTER [--json]\n       moonar --help | --version\nOptions: --max-bytes N (default 67108864), --max-members N (default 100000)\nUse -- before filenames beginning with '-'.\nDiff exits: 0 identical bytes, 1 different bytes, 2 invalid input or I/O error.\nThe CLI loads files into memory before applying parser limits.\n"
 }
 
 ///|
@@ -78,6 +78,7 @@ pub fn run(
   let path = match request.command {
     Help => return { exit_code: 0, stdout: help(), stderr: "", }
     Version => return { exit_code: 0, stdout: "moonar 0.1.0\n", stderr: "", }
+    Diff(before, after) => return run_diff(request, before, after, read)
     Inspect(path) | Check(path) => path
   }
   let bytes = match read(path) {

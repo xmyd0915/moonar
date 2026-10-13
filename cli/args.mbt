@@ -4,6 +4,7 @@ pub(all) enum Command {
   Version
   Inspect(String)
   Check(String)
+  Diff(String, String)
 } derive(Eq, Debug)
 
 ///|
@@ -62,8 +63,9 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       max_members: 100000,
     })
   }
-  if args.is_empty() || (args[0] != "inspect" && args[0] != "check") {
-    return Err("expected inspect or check; use --help for usage")
+  if args.is_empty() ||
+    (args[0] != "inspect" && args[0] != "check" && args[0] != "diff") {
+    return Err("expected inspect, check or diff; use --help for usage")
   }
   let paths : Array[String] = []
   let mut json_output = false
@@ -112,10 +114,13 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     }
     i += 1
   }
-  if paths.length() != 1 || paths[0].is_empty() {
-    return Err("this command needs exactly one input file")
+  let expected_paths = if args[0] == "diff" { 2 } else { 1 }
+  if paths.length() != expected_paths || paths.any(fn(path) { path.is_empty() }) {
+    return Err("this command needs exactly \{expected_paths} input file(s)")
   }
-  let command = if args[0] == "inspect" {
+  let command = if args[0] == "diff" {
+    Diff(paths[0], paths[1])
+  } else if args[0] == "inspect" {
     Inspect(paths[0])
   } else {
     Check(paths[0])
