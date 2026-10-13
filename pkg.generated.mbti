@@ -6,6 +6,8 @@ import {
 }
 
 // Values
+pub fn compare(Archive, Archive) -> Comparison
+
 pub fn parse(Bytes, max_members? : Int, max_bytes? : Int) -> Result[Archive, ParseError]
 
 // Errors
@@ -21,6 +23,24 @@ pub fn Archive::member_bytes(Self, Int) -> Bytes?
 pub fn Archive::member_count(Self) -> Int
 pub fn Archive::to_repr(Self) -> @debug.Repr
 
+pub(all) enum ChangeKind {
+  Added
+  Removed
+  Modified
+} derive(Eq, @debug.Debug)
+pub fn ChangeKind::equal(Self, Self) -> Bool
+pub fn ChangeKind::not_equal(Self, Self) -> Bool
+pub fn ChangeKind::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Comparison {
+  bytes_equal : Bool
+  order_changed : Bool
+  changes : Array[MemberChange]
+} derive(Eq, @debug.Debug)
+pub fn Comparison::equal(Self, Self) -> Bool
+pub fn Comparison::not_equal(Self, Self) -> Bool
+pub fn Comparison::to_repr(Self) -> @debug.Repr
+
 pub(all) struct Member {
   name : Bytes
   kind : MemberKind
@@ -35,6 +55,20 @@ pub fn Member::name_hex(Self) -> String
 pub fn Member::name_text(Self) -> String
 pub fn Member::not_equal(Self, Self) -> Bool
 pub fn Member::to_repr(Self) -> @debug.Repr
+
+pub(all) struct MemberChange {
+  change : ChangeKind
+  name : Bytes
+  member_kind : MemberKind
+  occurrence : Int
+  before_index : Int?
+  after_index : Int?
+  payload_changed : Bool
+  metadata_changed : Bool
+} derive(Eq, @debug.Debug)
+pub fn MemberChange::equal(Self, Self) -> Bool
+pub fn MemberChange::not_equal(Self, Self) -> Bool
+pub fn MemberChange::to_repr(Self) -> @debug.Repr
 
 pub(all) enum MemberKind {
   Regular

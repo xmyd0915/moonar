@@ -5,8 +5,8 @@ tools that need to inspect static libraries without spawning an archiver.
 
 Development is in progress. The first working stage reads ordinary short-name
 members, GNU long-name tables and BSD embedded names. It retains order and
-duplicate names, and reports malformed headers and truncated data. Comparison
-reports and the CLI are planned.
+duplicate names, reports malformed input, and compares payloads, metadata and
+relative record order. Structured output and the file-oriented CLI are planned.
 
 The scope is the archive container. MoonAr does not interpret object code, check
 ABI compatibility, link programs, or decide whether an archive is safe to execute.
