@@ -1,5 +1,8 @@
 import {
-  "xmyd0915/moonar" @ar,
+  "xmyd0915/moonar/cli",
+  "moonbitlang/core/env",
+  "moonbitlang/x/fs",
+  "moonbitlang/x/sys",
 }
 
 pkgtype(kind: "executable")

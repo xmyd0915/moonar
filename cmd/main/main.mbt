@@ -1,12 +1,24 @@
 ///|
 fn main {
-  // Minimal in-memory example until the file-oriented CLI is introduced.
-  let input = b"!<arch>\nnote.txt/       0           0     0     644     3         `\nabc\n"
-  match @ar.parse(input) {
-    Ok(archive) => {
-      let entry = archive.get_member(0).unwrap()
-      println("\{entry.name_text()}: \{entry.size} bytes")
+  let arguments = @env.args()
+  let request = match @cli.parse_args(arguments[1:].to_owned()) {
+    Ok(request) => request
+    Err(message) => {
+      eprintln(message)
+      @sys.exit(2)
+      return
     }
-    Err(error) => println("\{error.code}: \{error.message}")
   }
+  let result = @cli.run(request, fn(path) {
+    Ok(@fs.read_file_to_bytes(path)) catch {
+      @fs.IOError(message) => Err(message)
+    }
+  })
+  if !result.stdout.is_empty() {
+    println(result.stdout[:result.stdout.length() - 1].to_owned())
+  }
+  if !result.stderr.is_empty() {
+    eprintln(result.stderr[:result.stderr.length() - 1].to_owned())
+  }
+  @sys.exit(result.exit_code)
 }

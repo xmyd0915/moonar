@@ -13,3 +13,7 @@ keywords = [ "ar", "archive", "static-library", "binary", "diff" ]
 preferred_target = "native"
 
 description = "Read, inspect and compare ar archives in MoonBit"
+
+import {
+  "moonbitlang/x@0.5.5",
+}

@@ -1,0 +1,7 @@
+import {
+  "xmyd0915/moonar" @ar,
+}
+
+import {
+  "moonbitlang/core/json",
+} for "wbtest"
