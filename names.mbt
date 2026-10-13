@@ -28,3 +28,57 @@ fn gnu_names(
   }
   names
 }
+
+///|
+fn member_kind(name : Bytes) -> MemberKind {
+  if name == b"//" {
+    NameTable
+  } else if name == b"/" ||
+    name == b"/SYM64/" ||
+    name == b"__.SYMDEF" ||
+    name == b"__.SYMDEF SORTED" ||
+    name == b"__.SYMDEF_64" ||
+    name == b"__.SYMDEF_64 SORTED" {
+    SymbolTable
+  } else {
+    Regular
+  }
+}
+
+///|
+fn embedded_name_size(
+  data : Bytes,
+  start : Int,
+  width : Int,
+) -> Int raise InvalidArchive {
+  if width == 0 {
+    reject("AR006", start, "missing BSD name length")
+  }
+  for i = start; i < start + width; i = i + 1 {
+    if data[i] < b'0' || data[i] > b'9' {
+      reject("AR006", i, "invalid BSD name length")
+    }
+  }
+  number_field(data, start, width, 10, false, 2147483647L).unwrap().to_int()
+}
+
+///|
+fn bsd_name(
+  data : Bytes,
+  start : Int,
+  width : Int,
+) -> Bytes raise InvalidArchive {
+  let mut end = start + width
+  while end > start && data[end - 1] == b'\x00' {
+    end -= 1
+  }
+  if end == start {
+    reject("AR006", start, "empty BSD name")
+  }
+  for i = start; i < end; i = i + 1 {
+    if data[i] == b'\x00' {
+      reject("AR006", i, "NUL inside BSD name")
+    }
+  }
+  data[start:end].to_owned()
+}

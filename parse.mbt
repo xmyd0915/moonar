@@ -83,19 +83,7 @@ fn parse_records(
     if raw_name.is_empty() {
       reject("AR006", offset, "empty member name")
     }
-    if raw_name.has_prefix(b"#1/"[:]) {
-      reject("AR007", offset, "BSD embedded names are not yet supported")
-    }
-    let kind = if raw_name == b"/" ||
-      raw_name == b"/SYM64/" ||
-      raw_name == b"__.SYMDEF" ||
-      raw_name == b"__.SYMDEF SORTED" {
-      SymbolTable
-    } else if raw_name == b"//" {
-      NameTable
-    } else {
-      Regular
-    }
+    let mut kind = member_kind(raw_name)
     if kind == Regular && raw_name.has_prefix(b"/"[:]) {
       for i = 1; i < raw_name.length(); i = i + 1 {
         if raw_name[i] < b'0' || raw_name[i] > b'9' {
@@ -114,7 +102,7 @@ fn parse_records(
         .to_int()
       pending_names.push((records.length(), reference))
     }
-    let name = if kind == Regular && raw_name.has_suffix(b"/"[:]) {
+    let mut name = if kind == Regular && raw_name.has_suffix(b"/"[:]) {
       raw_name[:raw_name.length() - 1].to_owned()
     } else {
       raw_name
@@ -143,7 +131,7 @@ fn parse_records(
       )
       .unwrap()
       .to_int()
-    let data_offset = offset + 60
+    let mut data_offset = offset + 60
     if stored_size > data.length() - data_offset {
       reject("AR002", data_offset, "truncated member payload")
     }
@@ -158,12 +146,27 @@ fn parse_records(
       }
       long_names = Some(gnu_names(data, data_offset, stored_size))
     }
+    let mut size = stored_size
+    if raw_name.has_prefix(b"#1/"[:]) {
+      let name_size = embedded_name_size(
+        data,
+        offset + 3,
+        raw_name.length() - 3,
+      )
+      if name_size == 0 || name_size > stored_size {
+        reject("AR006", offset, "BSD name length is outside its record")
+      }
+      name = bsd_name(data, data_offset, name_size)
+      data_offset += name_size
+      size -= name_size
+    }
+    kind = member_kind(name)
     records.push({
       name,
       kind,
       header_offset: offset,
       data_offset,
-      size: stored_size,
+      size,
       stored_size,
       metadata: { timestamp, uid, gid, mode, },
     })
@@ -186,7 +189,8 @@ fn parse_records(
               entry.header_offset,
               "GNU name reference is not an entry boundary",
             )
-          Some(name) => records[index] = { ..entry, name, }
+          Some(name) =>
+            records[index] = { ..entry, name, kind: member_kind(name), }
         }
     }
   }
