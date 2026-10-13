@@ -52,11 +52,16 @@ pub fn Member::name_text(self : Member) -> String {
 ///|
 /// A lossless name suitable for JSON and comparison keys.
 pub fn Member::name_hex(self : Member) -> String {
+  hex_bytes(self.name)
+}
+
+///|
+fn hex_bytes(bytes : Bytes) -> String {
   let digits : Array[Char] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
   ]
   let result = StringBuilder()
-  for byte in self.name {
+  for byte in bytes {
     let n = byte.to_int()
     result.write_char(digits[n / 16])
     result.write_char(digits[n % 16])

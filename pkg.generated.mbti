@@ -21,6 +21,7 @@ pub fn Archive::byte_length(Self) -> Int
 pub fn Archive::get_member(Self, Int) -> Member?
 pub fn Archive::member_bytes(Self, Int) -> Bytes?
 pub fn Archive::member_count(Self) -> Int
+pub fn Archive::to_json(Self) -> Json
 pub fn Archive::to_repr(Self) -> @debug.Repr
 
 pub(all) enum ChangeKind {
@@ -29,6 +30,7 @@ pub(all) enum ChangeKind {
   Modified
 } derive(Eq, @debug.Debug)
 pub fn ChangeKind::equal(Self, Self) -> Bool
+pub fn ChangeKind::label(Self) -> String
 pub fn ChangeKind::not_equal(Self, Self) -> Bool
 pub fn ChangeKind::to_repr(Self) -> @debug.Repr
 
@@ -39,6 +41,7 @@ pub(all) struct Comparison {
 } derive(Eq, @debug.Debug)
 pub fn Comparison::equal(Self, Self) -> Bool
 pub fn Comparison::not_equal(Self, Self) -> Bool
+pub fn Comparison::to_json(Self) -> Json
 pub fn Comparison::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Member {
@@ -76,6 +79,7 @@ pub(all) enum MemberKind {
   NameTable
 } derive(Eq, @debug.Debug)
 pub fn MemberKind::equal(Self, Self) -> Bool
+pub fn MemberKind::label(Self) -> String
 pub fn MemberKind::not_equal(Self, Self) -> Bool
 pub fn MemberKind::to_repr(Self) -> @debug.Repr
 
@@ -96,6 +100,7 @@ pub(all) struct ParseError {
 } derive(Eq, @debug.Debug)
 pub fn ParseError::equal(Self, Self) -> Bool
 pub fn ParseError::not_equal(Self, Self) -> Bool
+pub fn ParseError::to_json(Self) -> Json
 pub fn ParseError::to_repr(Self) -> @debug.Repr
 
 // Type aliases
