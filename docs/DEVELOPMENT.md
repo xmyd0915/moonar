@@ -1,119 +1,82 @@
-# Development and acceptance notes
+# 开发说明
 
-## Scope
+## 代码结构
 
-MoonAr is a new ar container library and CLI. It reads archive records and
-compares member contents, names, order and metadata. It does not parse pkg-config
-files or reuse MoonPkgConfig code or Git history. MoonPatch's JSON patch proposal
-is also unrelated. No local MoonGitAttrs checkout was found in the workspace.
+| 文件或目录 | 职责 |
+| --- | --- |
+| `types.mbt` | 归档、成员、错误与比较结果类型 |
+| `parse.mbt` | 普通 ar 头部、数值字段、边界与资源限制 |
+| `names.mbt` | GNU 名称表和 BSD 内嵌名称 |
+| `compare.mbt` | 成员配对、数据与元数据比较、相对顺序判断 |
+| `json.mbt` | 版本化 JSON 输出与无损名称表示 |
+| `cli/` | 参数解析、命令执行和退出码 |
+| `cmd/main/` | 原生文件读取与命令行入口 |
+| `examples/read_deb/` | 通过公共 API 读取 Debian 包外层的示例 |
+| `tools/` | 示例生成与 GNU/LLVM 对照验证 |
 
-Initial support: ordinary GNU/BSD archives, including long names and opaque symbol
-tables. No writer, thin-archive file loading, object-code/ABI analysis, archive
-extraction to directories, or full Debian package validation.
+解析库接收完整的 `Bytes`，不访问文件系统。CLI 通过可注入的读取函数调用解析库，
+参数和错误处理可以在测试中使用内存数据。公共接口由 `moon info` 生成到
+[pkg.generated.mbti](../pkg.generated.mbti)。
 
-## Rule check: 2026-10-13
+## 实现约定
 
-- [October site](https://moonbitlang.github.io/Hackathon2026/): October 31 is the
-  registration and acceptance deadline; three submissions, editable before
-  approval. Use the October form's option to participate in quarterly selection.
-- [Charter](https://bxup9uklfcb.feishu.cn/wiki/Dx4Bwd6D1i3GfHkajQCcF7SznEd), marked
-  October 10: section 5.1 requires at least 10 meaningful commits **at application**,
-  three complete scenarios, and a human-written proposal within one Markdown page.
-- Acceptance requires public source, MoonBit as the main language, reproducible
-  README and example, core-path tests, CI check/build/test, MoonCakes publication,
-  and an OSI license with source attribution.
-- The charter still contains September headings and October 24 in its schedule.
-  Plan to finish by October 23; do not rely on the extra week without clarification.
-- No explicit minimum compiler version or mandatory quarterly attendance rule was
-  found in the reviewed sections. These remain unconfirmed, not waived requirements.
-- The organizer's reply supplied by the participant says an accepted September
-  project enters quarterly selection without reapplying and the participant may
-  enter October with a new project. It does not promise acceptance or a prize.
+### 归档存储与访问
 
-AI may assist implementation; the participant must understand the project and
-write the application. This file records facts for discussion, not an application.
+`Archive` 隐藏内部记录数组，只能通过成功解析获得。调用方可读取成员记录和数据副本，
+不能修改内部数组而破坏已检查的偏移。偏移以原始输入中的字节位置表示，成员索引包含
+符号表和名称表等特殊记录。
 
-## Duplicate search
+### 名称解析
 
-The October 13 MoonCakes catalog contained 2,966 package records. Metadata searches
-and focused GitHub searches did not find a dedicated MoonBit ar inspection/diff
-library. This is not proof of absence. The full current registration list was not
-available in the public sources checked.
+成员名保留为字节，不假设 UTF-8。GNU 长名称引用必须指向名称表条目的起点；名称表会
+完整检查，但只为实际引用的条目保留查询记录，避免为大量未使用名称分配对象。
+BSD 内嵌名称占用的字节从成员数据范围中扣除。
 
-Related projects checked:
+### 内容与填充
 
-- [elf](https://mooncakes.io/docs/moonbit-community/elf): ELF headers, sections,
-  symbols and relocation data inside object files, not an ar container interface.
-- [dwarfscope](https://github.com/wuhaiting321/moonbit-dwarfscope): ELF/DWARF parsing,
-  symbol lookup and crash reports. MoonAr should not duplicate these capabilities.
-- [tar](https://github.com/moonbit-community/tar) and
-  [zipc](https://github.com/moonbit-community/zipc): different container formats.
-- [moon archiver integration](https://github.com/moonbitlang/moon/blob/main/crates/moonutil/src/compiler_flags/archiver.rs):
-  Rust build-tool integration with system archivers, not a MoonBit byte parser.
-- [Previous OSC results](https://moonbitlang.github.io/OSC2026/): 13 listed projects;
-  this is a different event's public results, not an October registration list.
+普通奇数长度成员后的对齐字节不计入数据。LLVM Darwin 布局可能把填充换行计入头部声明的
+大小，解析结果保留这些字节，不能根据源文件长度推断并删除。
 
-The useful distinction is an embeddable library with structured diagnostics and
-comparison results. Merely reproducing `ar t` would offer limited additional value.
-Quarterly competitiveness needs evidence of useful integration, not commit counts.
+### 比较
 
-## Work sequence
+成员按类型、原始名称和出现次序配对。`bytes_equal` 包含全部头部与填充字节；
+`order_changed` 只考虑两侧已配对记录的相对顺序。内容与元数据的变化标志针对修改项，
+不用于解释新增或删除项。详细字段约定见 [API 说明](API.md)。
 
-Complete and verify each change before committing. A feature's basic tests belong
-with that feature. Do not split changes or add empty commits to reach a count.
+## 验证方法
 
-1. Ordinary record parsing, bounded reads and initial tests.
-2. GNU long-name tables and references, with malformed-reference tests.
-3. BSD embedded names and payload offsets, with compatibility tests.
-4. Record comparison, duplicate occurrence matching and order semantics.
-5. Stable JSON output preserving byte names and integer metadata.
-6. File inspection/check commands and command-line error handling.
-7. Archive comparison command and documented exit status behavior.
-8. GNU/LLVM differential fixtures and malformed-input regression suite.
-9. Runnable consumer examples and CI on declared supported platforms/backends.
-10. Documentation, source/license audit and release packaging verification.
+- 单元测试覆盖普通记录、GNU/BSD 名称、重名成员、比较、JSON 和 CLI 行为。
+- 异常输入测试包含混合归档的逐位置截断、字节变异和资源限制。
+- `tools/examples.py` 复核仓库内的五个样本，并检查三个使用场景的输出和退出码。
+- `tools/verify_archives.py` 使用 GNU ar 和 LLVM ar 生成归档，将成员列表、顺序及数据与
+  独立工具的列举和提取结果比较；也覆盖真实 C 对象、符号索引和确定性模式。
+- Linux 和 Windows CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
+  GNU/LLVM 对照，以及 `dpkg-deb --info` 检查 Debian 示例。
 
-This is a plan, not a claim that ten commits have been made or are already valid.
-More or fewer implementation stages may be needed; the application must not be
-sent until there are ten substantive, reviewable commits.
+对照过程中曾发现两个需要明确处理的工具行为：
 
-The participant authorized public repository creation and the first push on
-October 13. The independent repository is `xmyd0915/moonar`. Only that account is
-in scope. Forms and private identity or bank information remain with the
-participant.
+1. LLVM 18.1.3 的 Darwin 布局会把填充计入成员大小。对照脚本据此比较实际提取字节，
+   不再假设归档成员大小总是等于归档前的文件大小。
+2. Windows 上 GNU ar 2.30 的标准输出会在所测对象文件上转换换行。二进制对照使用
+   临时目录中的提取文件，避免终端输出转换影响结果。
 
-## Verification findings
+这些检查覆盖已列出的布局与输入，不能据此推断全部历史 ar 变体、对象格式或链接行为均受支持。
+具体提交的运行结果可在 [GitHub Actions](https://github.com/xmyd0915/moonar/actions) 查看。
 
-- GNU ar 2.30 on Windows verified long names, duplicate records, payload boundaries
-  and real C object archives. Deterministic/non-deterministic archives differed in
-  metadata; rebuilding the C function changed its payload.
-- The first Linux CI run passed compiler and unit-test checks, GNU ar 2.42 and
-  LLVM 18.1.3 GNU/BSD comparisons. Its Darwin comparison failed because the test
-  incorrectly assumed the archived size equalled the source file size. LLVM's
-  writer includes alignment bytes in Darwin payloads. The oracle now checks
-  declared bytes against the archiver's own extraction and print output.
-- GNU ar 2.30 on Windows translates LF on standard output in the object-file
-  sample. The test uses extraction into a generated scratch directory for binary
-  comparisons, without normalizing the archive bytes.
-- A consumer-package check showed `pub struct Archive` exposed its mutable record
-  array despite preventing field replacement. `Archive` is now abstract, keeping
-  validated offsets and storage inside the library.
-- Parsing tests include all truncations of a mixed archive, byte mutations and
-  limits on expanded names. These are regression tests, not a proof that every
-  malformed input or resource-use pattern has been covered.
-- GNU name tables are scanned for validity but only referenced entries are kept
-  in the lookup map, avoiding one allocation for every unused name.
+## 本地检查
 
-The corrected GNU/LLVM comparison and both CI platforms passed at commit
-`10c2491`. Later commits must pass their own runs before release.
+```sh
+moon info
+moon fmt
+moon check --target all --deny-warn
+moon test --target all --deny-warn
+moon build --target native --deny-warn
+python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe
+moon run examples/read_deb --target native
+```
 
-Check the repository's current CI run for the result at a particular commit;
-this log does not turn a failed or pending run into a pass.
+修改公共接口后检查 `.mbti` 差异。涉及格式兼容时，还应运行 README 中的 GNU/LLVM
+对照命令。新增回归测试应有明确的预期字节、格式依据或独立工具结果。
 
-## AI assistance and verification
-
-Codex assisted the research, design, implementation, tests and documentation.
-No claim is made that generated code was manually authored. No old project code
-or commit history is imported. Tests and comparisons are recorded only after they
-actually run. User understanding and the human-written application are still
-separate work to complete.
+现有内存模型与格式限制见 [README](../README.md)，依赖、参考资料与示例来源见
+[ORIGINS.md](../ORIGINS.md)。

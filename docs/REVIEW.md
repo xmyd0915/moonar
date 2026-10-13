@@ -1,56 +1,64 @@
-# 参赛者核对清单
+# 复现指南
 
-这份文件提供已实现的技术事实和验证步骤，不是代写的申报书。
-赛事章程要求申报书由参赛者本人撰写；不要直接把此文件当作申报书提交。
+这份指南用于快速核对 MoonAr 的功能、输出与边界。命令均从仓库根目录运行。
+环境要求见 [README](../README.md#快速开始)；自动核对脚本需要 Python 3.9+。
 
-## 先亲自运行
+## 运行三个场景
 
-在仓库根目录依次运行 [三个场景](../examples/README.md)。观察：
+先构建 CLI，再执行示例核对和公共 API 消费者：
 
-1. 正常归档能列出两个成员；损坏归档在字节 140 报 `AR002`。
-2. 时间戳变化时 `metadata_changed=true`，成员内容变化时 `payload_changed=true`。
-   两种差异都令 `diff` 返回 1，不能把它当作程序崩溃。
-3. `.deb` 示例读取三个外层成员，通过公共 API 读到 `debian-binary` 的 `2.0` 标记。
+```sh
+moon update
+moon build --target native --deny-warn
+python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe
+moon run examples/read_deb --target native
+```
 
-## 至少理解这些边界
+示例核对脚本依次验证：
 
-- 输入是一个完整的 `Bytes`。成功返回 `Archive`，失败返回带偏移的 `ParseError`。
-  可以把它理解为 C++ 中“解析结果或错误”的返回值，而不是静默跳过坏数据。
-- 文件名字节不保证是 UTF-8，所以 JSON 同时给出显示名称和十六进制原始名称。
-- 重名项按出现次序配对；新增重名项可能影响后续配对。
-- 检查通过只说明受支持的容器结构可读，不等于链接一定成功，也不代表包签名有效。
-- GNU 长文件名来自名称表；BSD 内嵌名称占用的数据要从成员内容中扣除。
-  Darwin 在声明的内容大小中包含的填充不能随意裁掉。
-- 实现使用 AI 辅助。不要申报成“全部手写”，也不要声称尚未完成的用户理解或人工审查。
+| 检查 | 预期结果 |
+| --- | --- |
+| 读取 `bundle-before.a` | `config.txt` 为 11 字节，`assets.bin` 为 3 字节 |
+| 检查 `bundle-broken.a` | 退出码 1，错误 `AR002`，偏移 140 |
+| 与 `bundle-time.a` 比较 | 两个成员均只有元数据变化；退出码 1 |
+| 与 `bundle-content.a` 比较 | 只有 `config.txt` 内容变化；退出码 1 |
+| 读取 `demo.deb` | 找到 `debian-binary`、`control.tar.gz` 和 `data.tar.gz` |
 
-建议先读 `types.mbt`、`parse.mbt`、`compare.mbt`，再看
-`examples/read_deb/main.mbt`。阅读目标是能解释数据流、一个错误分支和一个测试，
-不需要靠背诵语言语法解释项目。
+`read_deb` 示例另外通过库接口取得成员数据，并核对 `debian-binary` 的 `2.0` 标记。
+需要逐条手动运行时，参照 [完整场景说明](../examples/README.md)。
 
-## 申报前检查
+## 核对测试与独立工具结果
 
-- 仓库：<https://github.com/xmyd0915/moonar>；独立项目，MIT 许可证。
-- 实际测试与 CI：查看 [Actions](https://github.com/xmyd0915/moonar/actions)，
-  以要提交的版本对应的成功运行记录为准。
-- MoonCakes：确认 `xmyd0915/moonar` 的已发布版本可被新项目安装，不能只填写计划版本。
-- 提交：`git log --oneline` 可查看完整工作记录。章程要求申报时至少 10 次有效提交；
-  是否满足“有效”的最终判断由赛事审核决定。
-- README、三个场景、核心测试、CI check/build/test、许可与来源说明都应可从仓库找到。
-- 自己填写十月报名表，选择新项目和参加季度评选，按要求加入赛事群并使用 GitHub ID 昵称。
+```sh
+moon fmt --check
+moon check --target all --deny-warn
+moon test --target all --deny-warn
+```
 
-本人撰写的一页说明可以围绕四个问题组织：谁遇到什么问题、为什么现有接口不便于
-MoonBit 调用、首版做了什么及不做什么、别人怎样复现并验证。用自己实际运行的结果作证据。
+`--target all` 会让同一组测试分别运行在 wasm、wasm-gc、JavaScript 和 native 上。
+GNU/LLVM 对照需要额外安装 GNU ar、LLVM ar 和 gcc/cc：
 
-## 时间安排与待核实事项
+```sh
+python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+```
 
-核查日期：2026-10-13。官网写明 10 月 31 日截止报名与验收；章程页面仍有
-10 月 24 日的赛程文字。先按 **10 月 23 日前完成亲自验证和申报材料** 安排，
-给修改和审核留出余量，避免把一切压到最后一天。
+脚本会生成自己的输入，比较成员列表和实际提取字节，并检查真实对象文件变化。
+可在 [CI 工作流](../.github/workflows/ci.yml) 查看完整环境与步骤，在
+[Actions](https://github.com/xmyd0915/moonar/actions) 查看对应提交的 Linux、Windows 结果。
 
-给赛事小助手的一句话：
+## 阅读代码
 
-> 官网写十月报名和验收截止 10 月 31 日，但章程仍有 10 月 24 日，最终以哪天为准；季度评选是否有本人必须参加的线上或线下答辩，具体安排是什么？
+建议依次阅读 [类型与访问接口](../types.mbt)、[解析入口](../parse.mbt)、
+[名称处理](../names.mbt)、[归档比较](../compare.mbt)，再看
+[公共 API 示例](../examples/read_deb/main.mbt)。
 
-公开信息没有明确编译器最低版本；当前项目记录并固定自己的测试版本。
-月度验收、进入季度评选和最终获奖是不同结果，不能用测试数或提交数推断获奖。
-季度竞争力后续应靠真实使用反馈、有效集成和问题修复来证明。
+重点核对以下边界：
+
+- 解析失败返回错误代码和偏移，不静默跳过坏记录。
+- 文件名不保证是 UTF-8；十六进制名称保留原始字节，显示名称可能有替换字符。
+- 重名项按出现次序配对；插入新的同名项可能改变后续配对。
+- BSD 名称字节与成员数据分开；Darwin 声明在数据大小内的填充保留。
+- `check` 通过表示受支持的容器结构可读，不代表对象可链接、符号索引或包签名有效。
+- CLI 在解析限制生效前读取完整文件；库和 CLI 都不提供流式读取。
+
+JSON 字段与错误代码见 [API 说明](API.md)，格式与依赖来源见 [ORIGINS.md](../ORIGINS.md)。
