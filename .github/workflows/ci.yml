@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hustcer/setup-moonbit@9199da0ab63ea0c0bab1dc15f03d76e17ed4f75f # v1.22
+        with:
+          version: '0.10.14+7d59c7ec9'
+          core-version: '0.10.14+7d59c7ec9'
+      - name: Record toolchain
+        run: moon version --all
+      - name: Resolve dependencies
+        run: moon update
+      - name: Check formatting
+        run: moon fmt --check
+      - name: Check all supported backends
+        run: moon check --target all --deny-warn
+      - name: Test all supported backends
+        run: moon test --target all --deny-warn
+      - name: Build CLI
+        run: moon build --target native --deny-warn
+      - name: Check generated interfaces
+        shell: bash
+        run: |
+          moon info
+          git diff --exit-code -- '*.mbti'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: runner.os == 'Linux'
+        with:
+          python-version: '3.12'
+      - name: Install reference archivers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes binutils llvm gcc
+      - name: Compare with GNU and LLVM
+        if: runner.os == 'Linux'
+        run: python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+      - name: Check publish package
+        run: moon package --list
