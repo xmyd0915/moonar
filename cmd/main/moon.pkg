@@ -1,0 +1,5 @@
+import {
+  "xmyd0915/moonar" @ar,
+}
+
+pkgtype(kind: "executable")
