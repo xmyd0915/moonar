@@ -59,8 +59,9 @@ Comparison returns `bytes_equal`, `order_changed` and `changes`. Each change has
 
 Changes follow the old archive's order, followed by new-only records in the new
 archive's order. Header spelling and layout may differ while logical records
-match; `bytes_equal` still reports false. Symbol table byte changes do not identify
-which symbols changed, and there is no object-code equivalence analysis.
+match; `bytes_equal` still reports false. Physical symbol table changes describe
+bytes; use `compare_logical` for symbol-to-member mapping equality. Neither API
+analyzes object-code equivalence.
 
 ## Errors
 
@@ -78,6 +79,8 @@ which symbols changed, and there is no object-code equivalence analysis.
 | AR006 | Invalid name, embedded name length or GNU table reference |
 | AR007 | Thin archive; external files are not loaded |
 | AR008 | Invalid or exceeded resource limit |
+| AR009 | Invalid symbol index, string or member reference |
+| AR010 | Ambiguous byte order or unsupported multiple-index layout |
 | IO001 | CLI filesystem read failure; no offset |
 
 The offset identifies the field or position where parsing stopped, not always the
@@ -85,6 +88,60 @@ byte that originally caused the corruption. JSON diff parse errors also contain
 an `input` field identifying the failing path. Both success and failure in JSON
 mode are one JSON value followed by a newline. Argument errors use stderr text.
 
-Parsing validates a useful subset of ar container structure. It does not verify
-symbol index targets, member executable formats, cryptographic signatures or
-Debian policy. Passing `check` makes none of those promises.
+Parsing validates container structure and symbol index targets. It does not
+parse object internals to establish that referenced definitions exist, or verify
+executable compatibility, cryptographic signatures or Debian policy.
+
+## Symbol index API and JSON
+
+`parse` accepts `max_symbols` (default 1000000) and `max_symbol_name_bytes`
+(default 67108864), in addition to `max_bytes`, `max_members`, `max_name_bytes`.
+All limits are nonnegative and repeated names count towards expanded budgets.
+
+`symbol_indexes()` returns copies of both array levels. Each index contains
+`record_index`, `format`, and `symbols`. JSON adds `symbol_indexes` alongside
+`members`. Formats are `gnu32`, `gnu64`, `bsd32-le`, `bsd32-be`, `bsd64-le`,
+`bsd64-be`, and `bsd32-neutral`/`bsd64-neutral` when both byte orders give the
+same result. Different valid interpretations return `AR010`.
+
+Each symbol contains `name` (JSON: `name_display`/`name_hex`), `member_index`,
+`name_offset` and `offset_field_offset`. The last two fields locate name bytes
+and the target-offset field in the original archive. Targets must resolve to
+exact ordinary-member headers. Counts, string boundaries, termination, padding
+and SORTED name order are checked. Multiple indexes, including COFF's two linker
+members, are rejected with `AR010`.
+
+## Matching and logical comparison
+
+Both modes group by kind and raw name. Full payload equality is matched first,
+then remaining entries pair in occurrence order. Hash collisions still require
+byte equality. `occurrence` refers to the old group for paired/removed entries,
+and to the new group for additions. Insertions alone are not relative reordering.
+
+Both results add `ambiguities`: entries have raw/display names, `member_kind`,
+`before_indices`, and `after_indices`. They identify interchangeable exact
+matches or multiple remaining candidates. Pairing is deterministic; observed
+correspondence does not prove historical identity. Identical complete inputs
+have no ambiguity report.
+
+`compare_logical` excludes special records from member matching and returns:
+
+| Field | Meaning |
+| --- | --- |
+| `comparison_mode` | `logical`; default comparison uses `physical` |
+| `bytes_equal` | Equality of every input byte |
+| `content_equal` | Same ordinary names and payload multiset, excluding order/metadata |
+| `metadata_changed` | At least one paired ordinary member has different metadata |
+| `order_changed` | Relative order of paired ordinary members changed |
+| `symbols_equal` | Equal symbol-to-paired-member mappings, preserving target order per symbol |
+| `symbol_index_presence_changed` | Only one archive has an index |
+| `changes`, `ambiguities` | Ordinary-member changes and pairing ambiguities |
+
+Different widths, absolute offsets, and order between distinct symbol names can
+preserve mappings. Same-name target precedence remains significant. An empty
+index and absent index have equal mappings but different presence. Results use
+the reported correspondence, so inspect `ambiguities` as well.
+
+`diff --logical` exits 0 only when content, paired metadata/order, mappings and
+index presence match and there are no ambiguities. It can exit 0 with
+`bytes_equal=false`. No mode asserts executable, ABI or link equivalence.

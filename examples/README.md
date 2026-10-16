@@ -51,6 +51,18 @@ it. No privileges are needed.
 
 ## Verify all scenarios
 
+For cross-format logical comparison and symbol index validation, see
+[the comparison cases](../docs/COMPARISON.md). The independent tool script builds
+real object archives and checks GNU/BSD/Darwin layouts, same-name insertion and
+reorder, corrupt references, and GNU/Darwin 64-bit indexes:
+
+```sh
+python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+```
+
+This command requires GNU ar/nm, LLVM ar and gcc/cc. The cases retain actual
+Darwin metadata and declared payload padding rather than normalizing them away.
+
 ```sh
 moon build --target native
 python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe

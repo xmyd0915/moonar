@@ -79,3 +79,22 @@ test "CLI passes resource limits to the parser" {
   assert_eq(result.exit_code, 1)
   assert_true(result.stderr.has_prefix("AR008"))
 }
+
+///|
+test "CLI exposes all parser budgets and rejects duplicate or invalid budgets" {
+  let parsed = request([
+    "check", "input", "--max-name-bytes", "1", "--max-symbols", "2", "--max-symbol-name-bytes",
+    "3",
+  ])
+  assert_eq(parsed.max_name_bytes, 1)
+  assert_eq(parsed.max_symbols, 2)
+  assert_eq(parsed.max_symbol_name_bytes, 3)
+  for
+    flag in [
+      "--max-bytes", "--max-members", "--max-name-bytes", "--max-symbols", "--max-symbol-name-bytes",
+    ] {
+    assert_true(parse_args(["check", "input", flag, "1", flag, "2"]) is Err(_))
+    assert_true(parse_args(["check", "input", flag, "-1"]) is Err(_))
+    assert_true(parse_args(["check", "input", flag, "2147483648"]) is Err(_))
+  }
+}

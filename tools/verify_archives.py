@@ -1,6 +1,6 @@
 """Compare MoonAr with independent archivers, using only generated test data.
 
-Requires Python 3.9+, a built MoonAr executable, GNU ar and a C compiler.
+Requires Python 3.9+, a built MoonAr executable, GNU ar/nm and a C compiler.
 LLVM is optional locally and required in the Linux CI job.
 """
 
@@ -13,9 +13,9 @@ import subprocess
 import tempfile
 
 
-def run(args, cwd, expected=0):
+def run(args, cwd, expected=0, env=None):
     result = subprocess.run(
-        [str(arg) for arg in args], cwd=cwd, capture_output=True, check=False
+        [str(arg) for arg in args], cwd=cwd, capture_output=True, check=False, env=env
     )
     if result.returncode != expected:
         raise AssertionError(
@@ -101,7 +101,81 @@ def check_format(exe, archiver, cwd, label, format_args):
     assert changes[0]["occurrence"] == 1 and changes[0]["payload_changed"], diff
     assert bytes.fromhex(changes[0]["name_hex"]) == b"same.txt", diff
     (cwd / "one/same.txt").write_bytes(b"first")
+    run([archiver, *format_args, "qcDS", label + "-duplicates.a", "one/same.txt", "two/same.txt"], cwd)
+    run([archiver, *format_args, "qcDS", label + "-duplicate-insert.a", "three/same.txt", "one/same.txt", "two/same.txt"], cwd)
+    diff = report(exe, cwd, "diff", label + "-duplicates.a", label + "-duplicate-insert.a", expected=1)
+    changes = [c for c in diff["changes"] if c["member_kind"] == "regular"]
+    additions = [c for c in changes if c["change"] == "added"]
+    modifications = [c for c in changes if c["change"] == "modified"]
+    assert len(additions) == 1 and additions[0]["after_index"] == 0, diff
+    assert len(changes) == 1 or label == "llvm-darwin", diff
+    assert all(not c["payload_changed"] and c["metadata_changed"] for c in modifications), diff
+    assert not diff["order_changed"] and not diff["ambiguities"], diff
+    run([archiver, *format_args, "qcDS", label + "-duplicate-reorder.a", "two/same.txt", "one/same.txt"], cwd)
+    diff = report(exe, cwd, "diff", label + "-duplicates.a", label + "-duplicate-reorder.a", expected=1)
+    assert diff["order_changed"], diff
+    assert not diff["changes"] or (label == "llvm-darwin" and all(c["change"] == "modified" and not c["payload_changed"] for c in diff["changes"])), diff
     print(f"PASS {label}: names, payload offsets, duplicates, order, addition, modification")
+
+
+def check_symbols(exe, archiver, nm, cwd, label, format_args, force64=False):
+    archive = label + "-symbols.a"
+    files = ["long_object_name_for_symbol_index.o", "second.o"]
+    environment = dict(os.environ, SYM64_THRESHOLD="1") if force64 else None
+    run([archiver, *format_args, "rcsD", archive, *files], cwd, env=environment)
+    document = check_inventory(exe, archiver, cwd, archive, files, darwin=label.startswith("llvm-darwin"))
+    tables = document["symbol_indexes"]
+    assert len(tables) == 1 and tables[0]["symbols"], document
+    if force64:
+        assert "64" in tables[0]["format"], document
+    actual = []
+    for symbol in tables[0]["symbols"]:
+        member = document["members"][symbol["member_index"]]
+        name = bytes.fromhex(symbol["name_hex"]).decode("ascii")
+        member_name = bytes.fromhex(member["name_hex"]).decode("ascii")
+        actual.append(name + " in " + member_name)
+    # GNU nm independently decodes the archive's index, not MoonAr's JSON.
+    armap = subprocess.run([nm, "-s", archive], cwd=cwd, capture_output=True, check=False)
+    oracle = armap.stdout.decode("ascii").splitlines()
+    if armap.returncode == 0 and "Archive index:" in oracle:
+        begin = oracle.index("Archive index:") + 1
+        end = begin
+        while end < len(oracle) and oracle[end]:
+            end += 1
+        assert actual == oracle[begin:end], (archive, actual, oracle)
+    else:
+        # Older GNU BFD does not expose BSD armap records. Independently read
+        # the external defined symbols of each original object instead.
+        expected = []
+        for path in files:
+            lines = run([nm, "-g", "--defined-only", path], cwd).decode("ascii").splitlines()
+            expected.extend(line.split()[-1] + " in " + path for line in lines if line.strip())
+        assert sorted(actual) == sorted(expected), (archive, actual, expected)
+    corrupted = bytearray((cwd / archive).read_bytes())
+    table = tables[0]
+    width = 8 if "64" in table["format"] else 4
+    little = table["format"].endswith("-le")
+    offset = table["symbols"][0]["offset_field_offset"]
+    corrupted[offset:offset + width] = (1).to_bytes(width, "little" if little else "big")
+    bad = label + "-bad-index.a"
+    (cwd / bad).write_bytes(corrupted)
+    error = report(exe, cwd, "check", bad, expected=1)["error"]
+    assert error["code"] == "AR009" and error["offset"] == offset, error
+    print(f"PASS {label} symbols: {table['format']}, GNU nm mappings, corrupt target diagnostics")
+
+
+def check_logical_formats(exe, archiver, cwd):
+    files = ["aligned_long_member_name_for_comparison.txt"]
+    for fmt in ["gnu", "bsd", "darwin"]:
+        run([archiver, "--format=" + fmt, "qcDS", "logical-" + fmt + ".a", *files], cwd)
+    for fmt in ["bsd", "darwin"]:
+        diff = report(exe, cwd, "diff", "--logical", "logical-gnu.a", "logical-" + fmt + ".a")
+        assert not diff["bytes_equal"] and diff["content_equal"] and diff["symbols_equal"], diff
+        assert not diff["changes"] and not diff["ambiguities"], diff
+    # Same objects and symbols, encoded with different index and name layouts.
+    diff = report(exe, cwd, "diff", "--logical", "llvm-gnu-symbols.a", "llvm-bsd-symbols.a")
+    assert diff["content_equal"] and diff["symbols_equal"] and not diff["bytes_equal"], diff
+    print("PASS logical formats: GNU/BSD/Darwin member equality, GNU/BSD symbol mapping equality")
 
 
 def check_objects(exe, archiver, cc, cwd):
@@ -129,6 +203,8 @@ def check_objects(exe, archiver, cc, cwd):
     assert report(exe, cwd, "check", "truncated.a", expected=1)["error"]["code"] in {"AR002", "AR003"}
     assert report(exe, cwd, "diff", "deterministic.a", "truncated.a", expected=2)["input"] == "truncated.a"
     assert report(exe, cwd, "inspect", "missing.a", expected=2)["error"]["code"] == "IO001"
+    (cwd / "second.c").write_text("int moonar_second = 42;\n", encoding="ascii")
+    run([cc, "-c", "second.c", "-o", "second.o"], cwd)
     print("PASS GNU objects: symbol index, metadata-only change, recompile, thin/truncated input, I/O exits")
 
 
@@ -137,11 +213,12 @@ def main():
     parser.add_argument("--moonar", required=True, type=Path)
     parser.add_argument("--ar", default=shutil.which("ar"))
     parser.add_argument("--cc", default=shutil.which("cc") or shutil.which("gcc"))
+    parser.add_argument("--nm", default=shutil.which("nm"))
     parser.add_argument("--llvm-ar", default=shutil.which("llvm-ar"))
     parser.add_argument("--require-llvm", action="store_true")
     args = parser.parse_args()
-    if not args.ar or not args.cc or (args.require_llvm and not args.llvm_ar):
-        parser.error("GNU ar and C compiler required; --require-llvm also requires llvm-ar")
+    if not args.ar or not args.cc or not args.nm or (args.require_llvm and not args.llvm_ar):
+        parser.error("GNU ar/nm and C compiler required; --require-llvm also requires llvm-ar")
     exe = args.moonar.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="moonar-verify-") as temporary:
         cwd = Path(temporary)
@@ -150,16 +227,23 @@ def main():
             "short.txt": b"abc", "a_long_member_name_for_testing.txt": b"long\x00name\xff",
             "with space.txt": b"spaces", "empty": b"", "one/same.txt": b"first",
             "two/same.txt": b"second",
+            "three/same.txt": b"third",
+            "aligned_long_member_name_for_comparison.txt": b"12345678",
         }.items():
             path = cwd / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
         check_format(exe, args.ar, cwd, "gnu", [])
         check_objects(exe, args.ar, args.cc, cwd)
+        check_symbols(exe, args.ar, args.nm, cwd, "gnu", [])
         if args.llvm_ar:
             print(run([args.llvm_ar, "--version"], cwd).decode(errors="replace").splitlines()[0])
             for fmt in ["gnu", "bsd", "darwin"]:
                 check_format(exe, args.llvm_ar, cwd, "llvm-" + fmt, ["--format=" + fmt])
+                check_symbols(exe, args.llvm_ar, args.nm, cwd, "llvm-" + fmt, ["--format=" + fmt])
+            check_logical_formats(exe, args.llvm_ar, cwd)
+            for fmt in ["gnu", "darwin"]:
+                check_symbols(exe, args.llvm_ar, args.nm, cwd, "llvm-" + fmt + "64", ["--format=" + fmt], force64=True)
         else:
             print("SKIP LLVM: not installed (CI requires it)")
 

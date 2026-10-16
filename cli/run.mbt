@@ -1,6 +1,6 @@
 ///|
 pub fn help() -> String {
-  "MoonAr 0.1.0\nUsage: moonar inspect FILE [--json]\n       moonar check FILE [--json]\n       moonar diff BEFORE AFTER [--json]\n       moonar --help | --version\nOptions: --max-bytes N (default 67108864), --max-members N (default 100000)\nUse -- before filenames beginning with '-'.\nDiff exits: 0 identical bytes, 1 different bytes, 2 invalid input or I/O error.\nThe CLI loads files into memory before applying parser limits.\n"
+  "MoonAr 0.2.0\nUsage: moonar inspect FILE [--json]\n       moonar check FILE [--json]\n       moonar diff BEFORE AFTER [--logical] [--json]\n       moonar --help | --version\nOptions: --max-bytes N (67108864), --max-members N (100000),\n         --max-name-bytes N (67108864), --max-symbols N (1000000),\n         --max-symbol-name-bytes N (67108864)\nUse -- before filenames beginning with '-'.\nDiff exits: 0 equal, 1 different or ambiguous, 2 invalid input or I/O error.\nDefault equality compares all bytes; --logical compares regular members and symbol mappings.\nThe CLI loads files into memory before applying parser limits.\n"
 }
 
 ///|
@@ -36,6 +36,9 @@ fn parse_input(request : Request, bytes : Bytes) -> Result[@ar.Archive, Reply] {
       bytes,
       max_bytes=request.max_bytes,
       max_members=request.max_members,
+      max_name_bytes=request.max_name_bytes,
+      max_symbols=request.max_symbols,
+      max_symbol_name_bytes=request.max_symbol_name_bytes,
     ) {
     Ok(archive) => Ok(archive)
     Err(error) =>
@@ -77,7 +80,7 @@ pub fn run(
 ) -> Reply {
   let path = match request.command {
     Help => return { exit_code: 0, stdout: help(), stderr: "", }
-    Version => return { exit_code: 0, stdout: "moonar 0.1.0\n", stderr: "", }
+    Version => return { exit_code: 0, stdout: "moonar 0.2.0\n", stderr: "", }
     Diff(before, after) => return run_diff(request, before, after, read)
     Inspect(path) | Check(path) => path
   }

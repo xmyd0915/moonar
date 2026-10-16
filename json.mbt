@@ -66,29 +66,93 @@ pub fn Archive::to_json(self : Archive) -> Json {
     "format": Json("ar"),
     "byte_length": Json(self.byte_length()),
     "members": Json::array(entries),
+    "symbol_indexes": Json::array(
+      self.indexes.map(fn(table) {
+        Json::object({
+          "record_index": Json(table.record_index),
+          "format": Json(table.format),
+          "symbols": Json::array(
+            table.symbols.map(fn(symbol) {
+              Json::object({
+                "name_display": Json(
+                  @utf8.decode_lossy(symbol.name[:], ignore_bom=false),
+                ),
+                "name_hex": Json(hex_bytes(symbol.name)),
+                "member_index": Json(symbol.member_index),
+                "name_offset": Json(symbol.name_offset),
+                "offset_field_offset": Json(symbol.offset_field_offset),
+              })
+            }),
+          ),
+        })
+      }),
+    ),
   })
 }
 
 ///|
+fn changes_json(changes : Array[MemberChange]) -> Json {
+  Json::array(
+    changes.map(fn(change) {
+      Json::object({
+        "change": Json(change.change.label()),
+        "name_display": Json(
+          @utf8.decode_lossy(change.name[:], ignore_bom=false),
+        ),
+        "name_hex": Json(hex_bytes(change.name)),
+        "member_kind": Json(change.member_kind.label()),
+        "occurrence": Json(change.occurrence),
+        "before_index": index_value(change.before_index),
+        "after_index": index_value(change.after_index),
+        "payload_changed": Json(change.payload_changed),
+        "metadata_changed": Json(change.metadata_changed),
+      })
+    }),
+  )
+}
+
+///|
+fn ambiguities_json(ambiguities : Array[MatchAmbiguity]) -> Json {
+  Json::array(
+    ambiguities.map(fn(item) {
+      Json::object({
+        "name_display": Json(@utf8.decode_lossy(item.name[:], ignore_bom=false)),
+        "name_hex": Json(hex_bytes(item.name)),
+        "member_kind": Json(item.member_kind.label()),
+        "before_indices": Json::array(
+          item.before_indices.map(fn(i) { Json(i) }),
+        ),
+        "after_indices": Json::array(item.after_indices.map(fn(i) { Json(i) })),
+      })
+    }),
+  )
+}
+
+///|
 pub fn Comparison::to_json(self : Comparison) -> Json {
-  let changes = self.changes.map(fn(change) {
-    Json::object({
-      "change": Json(change.change.label()),
-      "name_display": Json(@utf8.decode_lossy(change.name[:], ignore_bom=false)),
-      "name_hex": Json(hex_bytes(change.name)),
-      "member_kind": Json(change.member_kind.label()),
-      "occurrence": Json(change.occurrence),
-      "before_index": index_value(change.before_index),
-      "after_index": index_value(change.after_index),
-      "payload_changed": Json(change.payload_changed),
-      "metadata_changed": Json(change.metadata_changed),
-    })
-  })
   Json::object({
     "schema_version": Json(1),
     "bytes_equal": Json(self.bytes_equal),
+    "comparison_mode": Json("physical"),
     "order_changed": Json(self.order_changed),
-    "changes": Json::array(changes),
+    "changes": changes_json(self.changes),
+    "ambiguities": ambiguities_json(self.ambiguities),
+  })
+}
+
+///|
+pub fn LogicalComparison::to_json(self : LogicalComparison) -> Json {
+  Json::object({
+    "schema_version": Json(1),
+    "comparison_mode": Json("logical"),
+    "bytes_equal": Json(self.bytes_equal),
+    "content_equal": Json(self.content_equal),
+    "metadata_changed": Json(self.metadata_changed),
+    "order_changed": Json(self.order_changed),
+    "symbols_equal": Json(self.symbols_equal),
+    "symbol_index_presence_changed": Json(self.symbol_index_presence_changed),
+    "changes": changes_json(self.changes),
+    "ambiguities": ambiguities_json(self.ambiguities),
   })
 }
 

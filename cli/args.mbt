@@ -19,6 +19,10 @@ pub(all) struct Request {
   json_output : Bool
   max_bytes : Int
   max_members : Int
+  logical : Bool
+  max_name_bytes : Int
+  max_symbols : Int
+  max_symbol_name_bytes : Int
 }
 
 ///|
@@ -53,6 +57,10 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       json_output: false,
       max_bytes: 67108864,
       max_members: 100000,
+      logical: false,
+      max_name_bytes: 67108864,
+      max_symbols: 1000000,
+      max_symbol_name_bytes: 67108864,
     })
   }
   if args == ["--version"] {
@@ -61,6 +69,10 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       json_output: false,
       max_bytes: 67108864,
       max_members: 100000,
+      logical: false,
+      max_name_bytes: 67108864,
+      max_symbols: 1000000,
+      max_symbol_name_bytes: 67108864,
     })
   }
   if args.is_empty() ||
@@ -71,8 +83,11 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
   let mut json_output = false
   let mut max_bytes = 67108864
   let mut max_members = 100000
-  let mut saw_bytes = false
-  let mut saw_members = false
+  let mut max_name_bytes = 67108864
+  let mut max_symbols = 1000000
+  let mut max_symbol_name_bytes = 67108864
+  let mut logical = false
+  let seen : Map[String, Unit] = Map([])
   let mut literal = false
   let mut i = 1
   while i < args.length() {
@@ -86,25 +101,32 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
         return Err("--json was specified more than once")
       }
       json_output = true
-    } else if arg == "--max-bytes" || arg == "--max-members" {
+    } else if arg == "--logical" {
+      if args[0] != "diff" || logical {
+        return Err("--logical is allowed once, only with diff")
+      }
+      logical = true
+    } else if arg == "--max-bytes" ||
+      arg == "--max-members" ||
+      arg == "--max-name-bytes" ||
+      arg == "--max-symbols" ||
+      arg == "--max-symbol-name-bytes" {
       if i + 1 >= args.length() {
         return Err("\{arg} needs a nonnegative integer")
       }
       guard limit_number(args[i + 1]) is Some(value) else {
         return Err("\{arg} needs an integer between 0 and 2147483647")
       }
-      if arg == "--max-bytes" {
-        if saw_bytes {
-          return Err("--max-bytes was specified more than once")
-        }
-        saw_bytes = true
-        max_bytes = value
-      } else {
-        if saw_members {
-          return Err("--max-members was specified more than once")
-        }
-        saw_members = true
-        max_members = value
+      if seen.get(arg) is Some(_) {
+        return Err("\{arg} was specified more than once")
+      }
+      seen[arg] = ()
+      match arg {
+        "--max-bytes" => max_bytes = value
+        "--max-members" => max_members = value
+        "--max-name-bytes" => max_name_bytes = value
+        "--max-symbols" => max_symbols = value
+        _ => max_symbol_name_bytes = value
       }
       i += 1
     } else if arg.has_prefix("-") {
@@ -125,5 +147,14 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
   } else {
     Check(paths[0])
   }
-  Ok({ command, json_output, max_bytes, max_members, })
+  Ok({
+    command,
+    json_output,
+    max_bytes,
+    max_members,
+    logical,
+    max_name_bytes,
+    max_symbols,
+    max_symbol_name_bytes,
+  })
 }

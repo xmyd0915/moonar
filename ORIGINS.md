@@ -3,8 +3,6 @@
 MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式资料独立实现，
 未复制其他归档解析器的实现代码。MoonBit 初始化工具生成了项目指引和 Git hook 模板。
 
-本项目开发过程中使用了 AI 工具辅助。
-
 ## 格式与行为参考
 
 - [GNU ar 文档](https://sourceware.org/binutils/docs/binutils/ar.html)：
@@ -12,7 +10,8 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
 - [LLVM ar 文档](https://llvm.org/docs/CommandGuide/llvm-ar.html)：
   GNU、BSD、Darwin 格式，以及成员列举、提取和确定性模式。
 - [LLVM 18.1.3 ArchiveWriter.cpp](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/lib/Object/ArchiveWriter.cpp)：
-  对照测试发现 Darwin 成员大小包含填充后，用于核对声明大小的处理；未复制其实现代码。
+  GNU/BSD 32/64 位索引布局、Darwin 对齐与重名时间戳行为，以及 `SYM64_THRESHOLD`
+  小文件验证开关；未复制其实现代码。
 - [Debian deb(5)](https://manpages.debian.org/bookworm/dpkg-dev/deb.5.en.html)：
   `.deb` 外层 ar 成员与 `debian-binary` 版本标记。
 - [MoonBit 包文档](https://docs.moonbitlang.com/en/latest/language/packages.html)：

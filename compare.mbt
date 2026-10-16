@@ -26,7 +26,44 @@ pub(all) struct Comparison {
   bytes_equal : Bool
   order_changed : Bool
   changes : Array[MemberChange]
+  ambiguities : Array[MatchAmbiguity]
 } derive(Eq, Debug)
+
+///|
+/// Several member identities fit the observed data; pairing is deterministic.
+pub(all) struct MatchAmbiguity {
+  name : Bytes
+  member_kind : MemberKind
+  before_indices : Array[Int]
+  after_indices : Array[Int]
+} derive(Eq, Debug)
+
+///|
+/// Logical members exclude name/symbol table records. Payload bytes are exact;
+/// embedded Darwin padding is not guessed or removed. Symbol mappings preserve
+/// the order of targets for each symbol name.
+pub(all) struct LogicalComparison {
+  bytes_equal : Bool
+  content_equal : Bool
+  metadata_changed : Bool
+  order_changed : Bool
+  symbols_equal : Bool
+  symbol_index_presence_changed : Bool
+  changes : Array[MemberChange]
+  ambiguities : Array[MatchAmbiguity]
+} derive(Eq, Debug)
+
+///|
+pub extend MatchAmbiguity with Eq::{equal, not_equal}
+
+///|
+pub extend MatchAmbiguity with Debug::{to_repr}
+
+///|
+pub extend LogicalComparison with Eq::{equal, not_equal}
+
+///|
+pub extend LogicalComparison with Debug::{to_repr}
 
 ///|
 pub extend ChangeKind with Eq::{equal, not_equal}
@@ -58,27 +95,136 @@ fn record_keys(entries : Array[Member]) -> Array[(String, Int)] {
     let base = prefix + entry.name_hex()
     let occurrence = counts.get(base).unwrap_or(0) + 1
     counts[base] = occurrence
-    (base + ":" + occurrence.to_string(), occurrence)
+    (base, occurrence)
   })
 }
 
 ///|
-/// Compare records by kind, raw name and duplicate occurrence. Symbol/name table
-/// payloads are included; this is not an ABI or link-equivalence comparison.
-pub fn compare(before : Archive, after : Archive) -> Comparison {
+priv struct RecordMatches {
+  pairs : Array[Int?]
+  ambiguities : Array[MatchAmbiguity]
+}
+
+///|
+fn payload(archive : Archive, index : Int) -> BytesView {
+  let entry = archive.records[index]
+  archive.data[entry.data_offset:entry.data_offset + entry.size]
+}
+
+///|
+// Equal payloads are matched first using byte-view keys (hash collisions still
+// require byte equality). Remaining same-name members pair in occurrence order.
+// No quadratic matrix, payload copies, or reliance on a fingerprint alone.
+fn match_records(
+  before : Archive,
+  after : Archive,
+  logical : Bool,
+) -> RecordMatches {
+  let bytes_equal = before.data == after.data
   let left_keys = record_keys(before.records)
   let right_keys = record_keys(after.records)
-  let right_index : Map[String, Int] = Map([])
-  for i, (key, _) in right_keys {
-    right_index[key] = i
+  let left_groups : Map[String, Array[Int]] = Map([])
+  let right_groups : Map[String, Array[Int]] = Map([])
+  for i, (key, _) in left_keys {
+    if !logical || before.records[i].kind == Regular {
+      match left_groups.get(key) {
+        Some(group) => group.push(i)
+        None => left_groups[key] = [i]
+      }
+    }
   }
+  for i, (key, _) in right_keys {
+    if !logical || after.records[i].kind == Regular {
+      match right_groups.get(key) {
+        Some(group) => group.push(i)
+        None => right_groups[key] = [i]
+      }
+    }
+  }
+  let pairs : Array[Int?] = Array::make(before.records.length(), None)
+  let ambiguities : Array[MatchAmbiguity] = []
+  let seen : Map[String, Unit] = Map([])
+  let used = Array::make(after.records.length(), false)
+  for i, (key, _) in left_keys {
+    if seen.get(key) is Some(_) ||
+      (logical && before.records[i].kind != Regular) {
+      continue
+    }
+    seen[key] = ()
+    let left = left_groups.get(key).unwrap()
+    let right = right_groups.get(key).unwrap_or([])
+    let buckets : Map[BytesView, Array[Int]] = Map([])
+    let counts : Map[BytesView, Int] = Map([])
+    let cursors : Map[BytesView, Int] = Map([])
+    for j in right {
+      let bytes = payload(after, j)
+      match buckets.get(bytes) {
+        Some(bucket) => bucket.push(j)
+        None => buckets[bytes] = [j]
+      }
+    }
+    for j in left {
+      let bytes = payload(before, j)
+      counts[bytes] = counts.get(bytes).unwrap_or(0) + 1
+    }
+    let mut ambiguous = false
+    for j in left {
+      let bytes = payload(before, j)
+      if buckets.get(bytes) is Some(bucket) {
+        let cursor = cursors.get(bytes).unwrap_or(0)
+        if cursor < bucket.length() {
+          let target = bucket[cursor]
+          pairs[j] = Some(target)
+          used[target] = true
+          cursors[bytes] = cursor + 1
+          if bucket.length() > 1 || counts.get(bytes).unwrap() > 1 {
+            ambiguous = true
+          }
+        }
+      }
+    }
+    let remaining_left = left.filter(fn(j) { pairs[j] is None })
+    let remaining_right = right.filter(fn(j) { !used[j] })
+    let count = Int::min(remaining_left.length(), remaining_right.length())
+    if count > 0 &&
+      (remaining_left.length() > 1 || remaining_right.length() > 1) {
+      ambiguous = true
+    }
+    for j = 0; j < count; j = j + 1 {
+      pairs[remaining_left[j]] = Some(remaining_right[j])
+      used[remaining_right[j]] = true
+    }
+    if ambiguous && !bytes_equal {
+      ambiguities.push({
+        name: before.records[i].name,
+        member_kind: before.records[i].kind,
+        before_indices: left.copy(),
+        after_indices: right.copy(),
+      })
+    }
+  }
+  { pairs, ambiguities, }
+}
+
+///|
+fn compare_records(
+  before : Archive,
+  after : Archive,
+  logical : Bool,
+  matches : RecordMatches,
+) -> Comparison {
+  let left_keys = record_keys(before.records)
+  let right_keys = record_keys(after.records)
   let matched = Array::make(after.records.length(), false)
   let changes : Array[MemberChange] = []
   let mut order_changed = false
   let mut previous_index = -1
-  for i, (key, occurrence) in left_keys {
+  for i, (_, occurrence) in left_keys {
     let entry = before.records[i]
-    match right_index.get(key) {
+    if logical && entry.kind != Regular {
+      continue
+    }
+    match matches.pairs[i] {
       None =>
         changes.push({
           change: Removed,
@@ -97,9 +243,7 @@ pub fn compare(before : Archive, after : Archive) -> Comparison {
         }
         previous_index = j
         let other = after.records[j]
-        let payload_changed = before.data[entry.data_offset:entry.data_offset +
-          entry.size] !=
-          after.data[other.data_offset:other.data_offset + other.size]
+        let payload_changed = payload(before, i) != payload(after, j)
         let metadata_changed = entry.metadata != other.metadata
         if payload_changed || metadata_changed {
           changes.push({
@@ -117,7 +261,7 @@ pub fn compare(before : Archive, after : Archive) -> Comparison {
     }
   }
   for i, (_, occurrence) in right_keys {
-    if !matched[i] {
+    if !matched[i] && (!logical || after.records[i].kind == Regular) {
       let entry = after.records[i]
       changes.push({
         change: Added,
@@ -131,5 +275,75 @@ pub fn compare(before : Archive, after : Archive) -> Comparison {
       })
     }
   }
-  { bytes_equal: before.data == after.data, order_changed, changes, }
+  {
+    bytes_equal: before.data == after.data,
+    order_changed,
+    changes,
+    ambiguities: matches.ambiguities,
+  }
+}
+
+///|
+/// Compare physical records by kind/name, matching identical payloads first.
+pub fn compare(before : Archive, after : Archive) -> Comparison {
+  compare_records(before, after, false, match_records(before, after, false))
+}
+
+///|
+fn symbol_mappings(
+  archive : Archive,
+  pairs : Array[Int?]?,
+) -> Map[Bytes, Array[Int]]? {
+  let mappings : Map[Bytes, Array[Int]] = Map([])
+  for table in archive.indexes {
+    for symbol in table.symbols {
+      let target = match pairs {
+        None => symbol.member_index
+        Some(pairs) =>
+          match pairs[symbol.member_index] {
+            Some(target) => target
+            None => return None
+          }
+      }
+      match mappings.get(symbol.name) {
+        Some(targets) => targets.push(target)
+        None => mappings[symbol.name] = [target]
+      }
+    }
+  }
+  Some(mappings)
+}
+
+///|
+/// Compare regular-member bytes and validated symbol-to-member mappings across
+/// encodings. This does not assert executable or ABI equivalence.
+pub fn compare_logical(before : Archive, after : Archive) -> LogicalComparison {
+  let matches = match_records(before, after, true)
+  let result = compare_records(before, after, true, matches)
+  let old_symbols = symbol_mappings(before, Some(matches.pairs))
+  let new_symbols = symbol_mappings(after, None).unwrap()
+  let symbols_equal = match old_symbols {
+    None => false
+    Some(old) =>
+      old.length() == new_symbols.length() &&
+      old
+      .iter()
+      .all(fn(pair) {
+        let (name, targets) = pair
+        new_symbols.get(name) == Some(targets)
+      })
+  }
+  {
+    bytes_equal: result.bytes_equal,
+    content_equal: result.changes.all(fn(change) {
+      change.change == Modified && !change.payload_changed
+    }),
+    metadata_changed: result.changes.any(fn(change) { change.metadata_changed }),
+    order_changed: result.order_changed,
+    symbols_equal,
+    symbol_index_presence_changed: before.indexes.is_empty() !=
+    after.indexes.is_empty(),
+    changes: result.changes,
+    ambiguities: result.ambiguities,
+  }
 }

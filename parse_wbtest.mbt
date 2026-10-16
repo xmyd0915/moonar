@@ -78,8 +78,9 @@ test "resource limits fail before reading another record" {
 }
 
 ///|
-test "symbol indexes are exposed as opaque records" {
-  let archive = parsed(b"!<arch>\n" + record("/", b"index"))
+test "symbol indexes are validated and retained as physical records" {
+  let archive = parsed(b"!<arch>\n" + record("/", b"\x00\x00\x00\x00"))
   assert_eq(archive.get_member(0).unwrap().kind, SymbolTable)
-  assert_eq(archive.member_bytes(0), Some(b"index"))
+  assert_eq(archive.member_bytes(0), Some(b"\x00\x00\x00\x00"))
+  assert_eq(error_code(b"!<arch>\n" + record("/", b"index")), "AR009")
 }

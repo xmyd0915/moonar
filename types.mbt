@@ -1,5 +1,5 @@
 ///|
-/// Structural roles of archive records. Symbol indexes remain opaque bytes.
+/// Structural roles of archive records.
 pub(all) enum MemberKind {
   Regular
   SymbolTable
@@ -33,7 +33,43 @@ pub(all) struct Member {
 struct Archive {
   data : Bytes
   records : Array[Member]
+  indexes : Array[SymbolIndex]
 } derive(Debug)
+
+///|
+/// A validated symbol-to-member reference. Offsets refer to the original input.
+pub(all) struct Symbol {
+  name : Bytes
+  member_index : Int
+  name_offset : Int
+  offset_field_offset : Int
+} derive(Eq, Debug)
+
+///|
+/// Format is gnu32/gnu64 or bsd32/bsd64 with a -le, -be or -neutral suffix.
+pub(all) struct SymbolIndex {
+  record_index : Int
+  format : String
+  symbols : Array[Symbol]
+} derive(Eq, Debug)
+
+///|
+/// Return copies so changing a returned array cannot alter validated references.
+pub fn Archive::symbol_indexes(self : Archive) -> Array[SymbolIndex] {
+  self.indexes.map(fn(index) { { ..index, symbols: index.symbols.copy(), } })
+}
+
+///|
+pub extend Symbol with Eq::{equal, not_equal}
+
+///|
+pub extend Symbol with Debug::{to_repr}
+
+///|
+pub extend SymbolIndex with Eq::{equal, not_equal}
+
+///|
+pub extend SymbolIndex with Debug::{to_repr}
 
 ///|
 /// A byte offset and stable code explain why parsing stopped.

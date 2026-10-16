@@ -79,3 +79,12 @@ test "header integer overflow and octal modes are checked" {
     "AR004",
   )
 }
+
+///|
+test "NUL names are rejected consistently across name encodings" {
+  assert_eq(error_code(b"!<arch>\n" + record("a\u0000b/", b"")), "AR006")
+  assert_eq(
+    error_code(b"!<arch>\n" + record("//", b"a\x00b/\n") + record("/0", b"")),
+    "AR006",
+  )
+}

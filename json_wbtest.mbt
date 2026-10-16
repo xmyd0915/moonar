@@ -70,3 +70,41 @@ test "comparison and parser errors have explicit machine-readable fields" {
     is { "error": { "code": String("AR001"), "offset": Number(0, ..), .. }, .. },
   )
 }
+
+///|
+test "symbol JSON exposes validated references and lossless names" {
+  let archive = parsed(indexed_archive(b"entry\xff"))
+  let json = archive.to_json()
+  assert_true(
+    json
+    is {
+      "symbol_indexes": [
+        {
+          "format": String("gnu32"),
+          "record_index": Number(0, ..),
+          "symbols": [
+            {
+              "name_hex": String("656e747279ff"),
+              "member_index": Number(1, ..),
+              "name_offset": Number(_, ..),
+              "offset_field_offset": Number(72, ..),
+              ..
+            },
+          ],
+          ..
+        },
+      ],
+      ..
+    },
+  )
+  assert_true(
+    compare_logical(archive, archive).to_json()
+    is {
+      "comparison_mode": String("logical"),
+      "content_equal": True,
+      "symbols_equal": True,
+      "ambiguities": [],
+      ..
+    },
+  )
+}

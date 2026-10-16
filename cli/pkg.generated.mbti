@@ -37,6 +37,10 @@ pub(all) struct Request {
   json_output : Bool
   max_bytes : Int
   max_members : Int
+  logical : Bool
+  max_name_bytes : Int
+  max_symbols : Int
+  max_symbol_name_bytes : Int
 }
 
 // Type aliases

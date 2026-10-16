@@ -4,11 +4,11 @@ priv suberror InvalidArchive {
 }
 
 ///|
-fn reject(
+fn[T] reject(
   code : String,
   offset : Int,
   message : String,
-) -> Unit raise InvalidArchive {
+) -> T raise InvalidArchive {
   raise InvalidArchive({ code, offset, message, })
 }
 
@@ -113,6 +113,11 @@ fn parse_records(
     if name.is_empty() {
       reject("AR006", offset, "empty member name")
     }
+    for byte in name {
+      if byte == b'\x00' {
+        reject("AR006", offset, "NUL inside member name")
+      }
+    }
     let timestamp = number_field(
       data,
       offset + 16,
@@ -212,7 +217,7 @@ fn parse_records(
     }
     total_name_bytes += entry.name.length()
   }
-  { data, records, }
+  { data, records, indexes: [], }
 }
 
 ///|
@@ -223,8 +228,14 @@ pub fn parse(
   max_members? : Int = 100000,
   max_bytes? : Int = 67108864,
   max_name_bytes? : Int = 67108864,
+  max_symbols? : Int = 1000000,
+  max_symbol_name_bytes? : Int = 67108864,
 ) -> Result[Archive, ParseError] {
-  if max_members < 0 || max_bytes < 0 || max_name_bytes < 0 {
+  if max_members < 0 ||
+    max_bytes < 0 ||
+    max_name_bytes < 0 ||
+    max_symbols < 0 ||
+    max_symbol_name_bytes < 0 {
     return Err({
       code: "AR008",
       offset: 0,
@@ -238,7 +249,13 @@ pub fn parse(
       message: "archive byte limit exceeded",
     })
   }
-  Ok(parse_records(input, max_members, max_name_bytes)) catch {
+  try {
+    let archive = parse_records(input, max_members, max_name_bytes)
+    let indexes = parse_symbol_indexes(
+      archive, max_symbols, max_symbol_name_bytes,
+    )
+    Ok({ ..archive, indexes, })
+  } catch {
     InvalidArchive(error) => Err(error)
   }
 }

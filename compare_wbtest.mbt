@@ -6,6 +6,7 @@ test "identical archives and metadata-only differences" {
     bytes_equal: true,
     order_changed: false,
     changes: [],
+    ambiguities: [],
   })
   let difference = compare(a, b)
   assert_false(difference.bytes_equal)
@@ -49,9 +50,9 @@ test "insertion is not reorder, but common records swapping is" {
 }
 
 ///|
-test "opaque symbol tables cannot disappear from comparison" {
-  let a = parsed(b"!<arch>\n" + record("/", b"one") + record("a/", b"same"))
-  let b = parsed(b"!<arch>\n" + record("/", b"two") + record("a/", b"same"))
+test "validated symbol tables cannot disappear from comparison" {
+  let a = parsed(indexed_archive(b"one"))
+  let b = parsed(indexed_archive(b"two"))
   let delta = compare(a, b)
   assert_eq(delta.changes.length(), 1)
   assert_eq(delta.changes[0].member_kind, SymbolTable)

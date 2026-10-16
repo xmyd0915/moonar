@@ -25,6 +25,11 @@ fn gnu_names(
     if stop == cursor {
       reject("AR006", cursor, "empty GNU long name")
     }
+    for i = cursor; i < stop; i = i + 1 {
+      if data[i] == b'\x00' {
+        reject("AR006", i, "NUL inside GNU long name")
+      }
+    }
     if wanted.get(cursor - start) is Some(_) {
       names[cursor - start] = data[cursor:stop].to_owned()
     }

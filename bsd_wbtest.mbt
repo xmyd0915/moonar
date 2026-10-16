@@ -14,20 +14,26 @@ test "BSD name bytes are excluded from payload size" {
 }
 
 ///|
-test "BSD symbol tables including sorted 64-bit names remain opaque" {
+test "BSD symbol tables including sorted 64-bit names are validated" {
   for
     name in [
       "__.SYMDEF", "__.SYMDEF SORTED", "__.SYMDEF_64", "__.SYMDEF_64 SORTED",
     ] {
+    let payload = if name.contains("_64") {
+      b"\x00".repeat(16)
+    } else {
+      b"\x00".repeat(8)
+    }
     let archive = parsed(
-      b"!<arch>\n" +
-      record("#1/\{name.length()}", @utf8.encode(name) + b"index"),
+      b"!<arch>\n" + record("#1/\{name.length()}", @utf8.encode(name) + payload),
     )
     assert_eq(archive.get_member(0).unwrap().kind, SymbolTable)
-    assert_eq(archive.member_bytes(0), Some(b"index"))
+    assert_eq(archive.member_bytes(0), Some(payload))
   }
   assert_eq(
-    parsed(b"!<arch>\n" + record("__.SYMDEF/", b"x")).get_member(0).unwrap().kind,
+    parsed(b"!<arch>\n" + record("__.SYMDEF/", b"\x00".repeat(8)))
+    .get_member(0)
+    .unwrap().kind,
     SymbolTable,
   )
 }

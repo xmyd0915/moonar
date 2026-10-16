@@ -49,6 +49,7 @@ test "diff plain output escapes names and reports container-only differences" {
   let delta : @ar.Comparison = {
     bytes_equal: false,
     order_changed: false,
+    ambiguities: [],
     changes: [
       {
         change: @ar.Added,
@@ -63,4 +64,32 @@ test "diff plain output escapes names and reports container-only differences" {
     ],
   }
   assert_false(diff_text(delta).contains("\u001b"))
+}
+
+///|
+test "logical CLI separates byte equality from regular member equality" {
+  let gnu = b"!<arch>\n//              0           0     0     644     18        `\nlong_filename.o/\n\n/0              0           0     0     644     1         `\nx\n"
+  let bsd = b"!<arch>\n#1/15           0           0     0     644     16        `\nlong_filename.ox"
+  let read = fn(path) { Ok(if path == "gnu" { gnu } else { bsd }) }
+  let physical = run(request(["diff", "gnu", "bsd", "--json"]), read)
+  let logical = run(
+    request(["diff", "gnu", "bsd", "--logical", "--json"]),
+    read,
+  )
+  assert_eq(physical.exit_code, 1)
+  assert_eq(logical.exit_code, 0)
+  assert_true(
+    @json.parse(logical.stdout)
+    is {
+      "comparison_mode": String("logical"),
+      "bytes_equal": False,
+      "content_equal": True,
+      "symbols_equal": True,
+      ..
+    },
+  )
+  assert_true(parse_args(["inspect", "gnu", "--logical"]) is Err(_))
+  assert_true(
+    parse_args(["diff", "gnu", "bsd", "--logical", "--logical"]) is Err(_),
+  )
 }
