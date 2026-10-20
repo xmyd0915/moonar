@@ -44,6 +44,22 @@ every name byte. `stored_size` comes from the header, while `size` excludes BSD
 embedded name bytes. Neither includes the ordinary odd-byte alignment after a
 record. Darwin padding declared inside the payload is retained.
 
+Thin inspection uses `"format": "thin"`. Ordinary records have `"external": true`
+and their declared external `size`; no inline `data_offset` is exposed.
+`check` validates container/index metadata without loading external files.
+
+`list --json` is a distinct selector view. It contains `schema_version`, `format`,
+`byte_length`, `index_kind: "ordinary_member"` and `members`. Only ordinary members
+appear. Their `index` is the zero-based selector accepted by `extract`, `replace`,
+`delete`, `move` and `rename`; `record_index` retains the physical record position.
+Use `inspect --json` for physical symbol-index mappings. Never pass an inspection
+physical index directly to an edit command.
+
+Successful mutation JSON contains `schema_version`, `operation`, `output`
+and `byte_length`. Mutation failure returns exit code 2 and an `error` object.
+New output paths require `--force` to replace an existing file; in-place edits
+replace atomically.
+
 Metadata values are **decimal strings or null**, not JSON numbers. This preserves
 integer values in JavaScript consumers. The header mode is octal, so header `644`
 becomes decimal string `"420"`. A blank field is null. Numeric fields reject signs,
@@ -85,7 +101,12 @@ analyzes object-code equivalence.
 | AR008 | Invalid or exceeded resource limit |
 | AR009 | Invalid symbol index, string or member reference |
 | AR010 | Ambiguous byte order or unsupported multiple-index layout |
+| AR011–AR014 | Thin reference, path, loading or declared-size error; see WRITING.md |
+| WR001–WR006 | Editing, metadata, budget, index policy, symbol or object error |
+| OB001–OB003 | Object structure, unsupported format or symbol discovery budget |
 | IO001 | CLI filesystem read failure; no offset |
+| IO002 | CLI filesystem publication failure |
+| IO003 | CLI unsafe output alias or path resolution failure |
 
 The offset identifies the field or position where parsing stopped, not always the
 byte that originally caused the corruption. JSON diff parse errors also contain

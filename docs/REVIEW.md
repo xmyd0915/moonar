@@ -1,78 +1,95 @@
 # 复现指南
 
-这份指南用于快速核对 MoonAr 的功能、输出与边界。命令均从仓库根目录运行。
-环境要求见 [README](../README.md#快速开始)；自动核对脚本需要 Python 3.9+。
+从仓库根目录执行。需要 MoonBit `0.10.14+7d59c7ec9`、C 编译器和 Python 3.9+。
+独立工具验证另需 GNU ar/nm、LLVM ar；真实项目脚本使用 GCC。
 
-## 运行三个场景
-
-先构建 CLI，再执行示例核对和公共 API 消费者：
+## 构建与基础测试
 
 ```sh
 moon update
+moon fmt --check
+moon check --target all --deny-warn
+moon test --target all --deny-warn
 moon build --target native --deny-warn
+moon build --target js --deny-warn
 python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe
 moon run examples/read_deb --target native
 ```
 
-示例核对脚本依次验证：
+四个后端为 native、JavaScript、wasm、wasm-gc。基础示例检查普通读取、截断定位、
+元数据与内容差异、Debian 外层成员；预期数据见 [示例说明](../examples/README.md)。
 
-| 检查 | 预期结果 |
-| --- | --- |
-| 读取 `bundle-before.a` | `config.txt` 为 11 字节，`assets.bin` 为 3 字节 |
-| 检查 `bundle-broken.a` | 退出码 1，错误 `AR002`，偏移 140 |
-| 与 `bundle-time.a` 比较 | 两个成员均只有元数据变化；退出码 1 |
-| 与 `bundle-content.a` 比较 | 只有 `config.txt` 内容变化；退出码 1 |
-| 读取 `demo.deb` | 找到 `debian-binary`、`control.tar.gz` 和 `data.tar.gz` |
-
-`read_deb` 示例另外通过库接口取得成员数据，并核对 `debian-binary` 的 `2.0` 标记。
-需要逐条手动运行时，参照 [完整场景说明](../examples/README.md)。
-
-## 核对测试与独立工具结果
-
-```sh
-moon fmt --check
-moon check --target all --deny-warn
-moon test --target all --deny-warn
-```
-
-`--target all` 会让同一组测试分别运行在 wasm、wasm-gc、JavaScript 和 native 上。
-GNU/LLVM 对照需要额外安装 GNU ar/nm、LLVM ar 和 gcc/cc：
+## 独立格式与完整编辑流程
 
 ```sh
 python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
 python tools/verify_workflow.py --workflow _build/native/debug/build/examples/archive_workflow/archive_workflow.exe --require-llvm
+python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
 ```
 
-脚本生成自己的输入，比较成员列表、提取字节和原始对象符号，并依次输出：
+| 脚本 | 核对内容 |
+| --- | --- |
+| `verify_archives.py` | 参考工具生成归档，MoonAr 读取；列表、提取、重名、索引、损坏引用、逻辑比较和 thin 元数据 |
+| `verify_workflow.py` | 公共库示例创建与编辑，独立工具提取，加载 thin 并物化，显式映射写出后真实链接 |
+| `verify_cli.py` | 全部编辑命令、六种布局与字节序、自动符号发现、GNU32/64 thin、重定位、缺失成员删除、真实链接运行 |
 
-- GNU、LLVM GNU/BSD/Darwin 的名称、载荷、重名插入与重排；
-- 四种布局的真实对象符号映射和损坏引用的 `AR009` 诊断；
-- 跨方言普通成员相等与 GNU/BSD 符号映射相等；
-- LLVM 生成的 GNU/Darwin 64 位索引。
+支持 `--ar`、`--nm`、`--cc`、`--llvm-ar` 显式指定工具。完整 CLI 脚本在有 Clang 时
+额外生成 Mach-O 对象；提供 `--zig` 可验证四种 BSD/Darwin 布局的 Mach-O 链接。
+跨目标 Mach-O 链接产物在 Windows/Linux 上不执行，不能把链接成功表述为本机运行成功。
 
-旧版 GNU nm 不展示 BSD armap 时，以原始对象的已定义外部符号及其输入成员作为参照。
-64 位测试使用 LLVM 的 `SYM64_THRESHOLD` 小文件测试开关。
-读写工作流另验证 MoonAr 输出被 GNU/LLVM 列举和提取、确定性字节与精确重名编辑、
-GNU/LLVM thin 的加载及物化，并用真实 C 对象检查写出的 GNU32 索引和链接运行结果。
-可在 [CI 工作流](../.github/workflows/ci.yml) 查看完整环境与步骤，在
-[Actions](https://github.com/xmyd0915/moonar/actions) 查看对应提交的 Linux、Windows 结果。
+GNU/LLVM 对照使用临时目录实际提取二进制，避免 Windows 旧 GNU ar 的标准输出换行转换。
+Darwin 声明在载荷内的填充保留；BSD/Darwin 原始对象符号独立于归档映射作参照。
+没有 LLVM 时不带 `--require-llvm` 可以运行其余检查，跳过项会明确输出。
 
-## 阅读代码
+## 文件发布与路径回归
 
-建议依次阅读 [类型与访问接口](../types.mbt)、[解析入口](../parse.mbt)、
-[名称处理](../names.mbt)、[索引校验](../symbols.mbt)、[归档比较](../compare.mbt)，再看
-[公共 API 示例](../examples/read_deb/main.mbt)。
+```sh
+python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe --node-entry _build/js/debug/build/cmd/main/main.js
+```
 
-重点核对以下边界：
+在 native 和 Node 两个真实文件入口检查：Unicode 名称与二进制内容、新建禁止覆盖、
+`--force`、失败保留原字节、两进程竞争只有一个成功、临时文件清理、目录联接/符号链接
+真实路径范围、允许父目录访问、提取源和 thin 依赖的输出别名保护。
+Windows 增加大小写别名，POSIX 检查替换后权限保留。路径能力因平台受限时脚本明确报出。
 
-- 解析失败返回错误代码和偏移，不静默跳过坏记录。
-- 文件名不保证是 UTF-8；十六进制名称保留原始字节，显示名称可能有替换字符。
-- 重名项优先按内容配对；同名插入不会连带误报原载荷修改；多解情况报告 `ambiguities`。
-- BSD 名称字节与成员数据分开；Darwin 声明在数据大小内的填充保留。
-- `check` 通过表示容器与符号索引结构有效，不代表引用符号确由对象定义、可链接或签名有效。
-- CLI 在解析限制生效前读取完整文件；库和 CLI 都不提供流式读取。
+## zlib 真实构建消费者
 
-JSON 字段与错误代码见 [API 说明](API.md)，格式与依赖来源见 [ORIGINS.md](../ORIGINS.md)。
-多方言兼容和归档比较的职责及案例见 [比较说明](COMPARISON.md)。
-创建与编辑的契约见 [读写 API](WRITING.md)，完整通用库的目标、阶段和验收见
-[交付计划](ROADMAP.md)。
+```sh
+python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe --cc gcc
+```
+
+脚本下载固定的 zlib 1.3.1 并核对 SHA-256；离线使用可添加
+`--source-archive /path/to/zlib-1.3.1.tar.gz`，仍执行相同摘要检查。
+来源及许可证见 [ORIGINS](../ORIGINS.md)。
+
+1. 编译上游 15 个 C 源文件，不链接系统 zlib。
+2. 用 MoonAr 默认自动发现符号，分别创建普通与 thin 静态库。
+3. 链接消费者，对 131072 字节输入在压缩级别 1 与 9 下执行压缩、解压和逐字节校验。
+4. 重新编译 `deflate.o` 并替换成员，提取核对替换结果，再链接运行两种库。
+5. 将 thin 物化为普通归档，再次链接运行。
+
+共执行五个消费者，每个运行两种压缩级别。此流程不调用外部归档工具，也不手工提供符号表。
+
+## 发布包公共接口
+
+```sh
+python tools/verify_package.py
+```
+
+脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。五项公开接口测试在四个后端运行，
+覆盖六种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入和返回数组隔离。
+验证报告写到 `_build/verification/package-consumer.json`，包含版本与包摘要。
+
+## 验收边界与持续集成
+
+[CI](../.github/workflows/ci.yml) 在 Linux/Windows 跑四后端测试、native/Node 文件检查和
+公共 API 示例；Linux 安装明确的 GNU/LLVM/Clang/GCC 工具链，运行所有参考与 zlib 流程。
+提交对应结果见 [Actions](https://github.com/xmyd0915/moonar/actions)。
+
+结构检查与对象发现承担不同职责：`check` 验证容器和索引引用，自动发现验证所支持的对象
+符号结构；实际可链接性由消费者检查。错误输入不被静默跳过。JSON `list` 的普通成员序号
+可直接传入编辑命令，`inspect` 则保留物理记录位置。
+
+当前格式范围、未支持的变体及资源模型见 [README](../README.md)，完整验收矩阵见
+[范围与阶段](ROADMAP.md)。源码阅读入口为 [类型](../types.mbt)、[thin](../thin.mbt)、
+[写出](../write.mbt)、[对象符号](../object_symbols.mbt)、[CLI](../cli/manage.mbt)。

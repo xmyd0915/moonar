@@ -3,8 +3,10 @@ pub(all) enum Command {
   Help
   Version
   Inspect(String)
+  List(String)
   Check(String)
   Diff(String, String)
+  Manage(ManageOptions)
 } derive(Eq, Debug)
 
 ///|
@@ -51,6 +53,13 @@ fn limit_number(text : String) -> Int? {
 ///|
 /// Parse arguments excluding the program name. No files are opened here.
 pub fn parse_args(args : Array[String]) -> Result[Request, String] {
+  if !args.is_empty() &&
+    [
+      "create", "add", "replace", "delete", "move", "rename", "extract", "convert",
+      "index",
+    ].contains(args[0]) {
+    return parse_manage_args(args)
+  }
   if args == ["--help"] || args == ["-h"] {
     return Ok({
       command: Help,
@@ -76,8 +85,13 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     })
   }
   if args.is_empty() ||
-    (args[0] != "inspect" && args[0] != "check" && args[0] != "diff") {
-    return Err("expected inspect, check or diff; use --help for usage")
+    (
+      args[0] != "inspect" &&
+      args[0] != "list" &&
+      args[0] != "check" &&
+      args[0] != "diff"
+    ) {
+    return Err("unknown command; use --help for usage")
   }
   let paths : Array[String] = []
   let mut json_output = false
@@ -144,6 +158,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     Diff(paths[0], paths[1])
   } else if args[0] == "inspect" {
     Inspect(paths[0])
+  } else if args[0] == "list" {
+    List(paths[0])
   } else {
     Check(paths[0])
   }

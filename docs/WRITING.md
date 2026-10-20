@@ -1,115 +1,146 @@
-# 创建、编辑与 thin 成员
+# 创建、编辑、thin 与自动索引
 
-这些接口通过公共包 `xmyd0915/moonar` 使用。核心库只处理字节和成员序列，
-文件读写由调用方负责；可运行消费者见 [archive_workflow](../examples/archive_workflow/README.md)。
+公共包 `xmyd0915/moonar` 处理字节和成员序列，文件读写由调用方负责。
+命令行是同一套公共接口的文件消费者，完整操作见 [README](../README.md)。
 
-## 创建普通归档
+## 普通归档创建与编辑
 
 `WriteMember::new(name, data, metadata?)` 接受原始名称和数据字节。
-`ArchiveBuilder::new()` 创建空编辑计划，`append` 返回添加成员后的新计划。
-批量创建使用 `ArchiveBuilder::from_members(entries)`，一次复制并校验成员数组，
-避免逐项追加时反复复制序列。
-`write(format=Gnu)` 写出 GNU 归档，`format=Bsd` 使用 BSD 内嵌名称。
-GNU 自动去重并生成长名称表，BSD 将名称长度计入存储大小；两者重算头部和奇数对齐。
+`ArchiveBuilder::from_members(entries)` 批量校验并复制成员序列，`new()` 创建空计划。
 
 ```moonbit
-let plan = @ar.ArchiveBuilder::new()
-let plan = plan.append(@ar.WriteMember::new(b"same.txt", b"first")).unwrap()
-let plan = plan.append(@ar.WriteMember::new(b"same.txt", b"second")).unwrap()
+let plan = @ar.ArchiveBuilder::from_members([
+  @ar.WriteMember::new(b"same.txt", b"first"),
+  @ar.WriteMember::new(b"same.txt", b"second"),
+]).unwrap()
 let bytes = plan.write(format=@ar.Gnu).unwrap()
 ```
 
-示例中的 `unwrap()` 适用于固定有效输入；处理外部输入时应匹配 `Result` 的错误分支。
-`WriteError` 包含稳定代码、可选普通成员序号 `member_index` 和说明。
-
-默认 `metadata=Deterministic` 输出时间戳、UID、GID 为零，模式为 `0644`。
-`metadata=Preserve` 保留传入的字段，`None` 写为空格。写出器检查数字非负且能放入头部字段。
-空名称、NUL 和格式保留名称不能作为普通成员；GNU 长名称不能包含换行。
-BSD 可以保存含换行的名称。名称本身不要求 UTF-8。
-
-## 编辑与重名成员
-
-`archive.edit()` 导入普通成员，自动移除由写出器重建的名称表。
-若原归档存在符号索引，此调用返回 `WR004`；调用方必须明确使用
-`archive.edit(drop_symbol_indexes=true)`，再决定是否提供新的符号映射。
-
-| 方法 | 语义 |
+| 编辑方法 | 行为 |
 | --- | --- |
-| `append(entry)` | 追加一个普通成员 |
-| `replace(index, entry)` | 替换该位置的名称、内容和元数据 |
-| `remove(index)` | 删除该位置的成员 |
-| `move_member(from, to)` | 移动到最终位置 `to`，其余成员保持相对顺序 |
-| `members()` | 取得成员数组副本 |
+| `append(entry)` | 追加成员 |
+| `insert(index, entry)` | 在 `0..member_count()` 位置插入 |
+| `replace(index, entry)` | 替换名称、内容和元数据 |
+| `remove(index)` | 删除成员 |
+| `move_member(from, to)` | 移到最终位置 `to` |
+| `members()` | 返回成员数组副本 |
 
-所有编辑位置都是**普通成员序列的零基序号**，不含名称表或符号表，
-与 `Archive.get_member` 的物理记录序号不同。相同名称的多个成员保持独立身份。
-操作返回新的 `ArchiveBuilder`，不会改变原计划；无效位置或字段返回错误。
-替换可用于重命名或修改元数据。重建保证指定的逻辑成员，不保证原始头部空格和特殊记录逐字节不变。
+所有位置是**普通成员零基序号**，不包含名称表和符号表。操作返回新的计划，不修改原计划；
+重名成员保持独立。`archive.edit()` 导入普通成员并移除旧名称表。若存在符号索引，需显式
+使用 `drop_symbol_indexes=true`；否则返回 `WR004`。最终写出重建布局和索引，不保留旧偏移。
 
-## 写出符号索引
+`WriteFormat` 包含 `Gnu`、`Gnu64`、`Bsd`、`Bsd64`、`Darwin`、`Darwin64`。
+默认 `metadata=Deterministic` 写时间戳、UID、GID 为零，模式为 `0644`。
+`metadata=Preserve` 保留输入字段，空字段写空格；数值必须非负且能装入字段。
+Darwin 遵循八字节对齐，并为确定性重名成员分配递增时间戳。
 
-最终 `write` 可以接收 `symbols=Some([...])`，每个 `WriteSymbol` 包含：
+名称不能为空或含 NUL。GNU 长名称不能含换行；与特殊记录同名的普通文件通过长名称表
+表达。BSD/Darwin 拒绝这些保留名称，可保存其他包含换行的名称。名称无需为 UTF-8。
+Darwin 计入载荷的填充会在读取及提取时保留。
 
-- `name : Bytes`：非空且不含 NUL 的符号名称；
-- `member_index : Int`：最终编辑计划中的普通成员序号。
+## 显式映射与自动发现
 
-符号映射必须在全部编辑之后提供。写出器先计算索引、名称表和全部成员头部的位置，
-再生成 GNU32 大端索引；同名符号和输入映射顺序原样保留。
-`None` 表示不生成索引，`Some([])` 表示生成一个空索引。
-BSD 格式同时请求索引会返回 `WR005`。
+`write(symbols=Some(mappings))` 写出索引，每个 `WriteSymbol` 含 `name : Bytes` 和最终
+普通成员序号 `member_index : Int`。索引偏移由最终布局计算，调用方不必计算文件偏移。
+GNU 使用大端；BSD/Darwin 使用 `index_little_endian` 选择字节序，默认为 `true`。
+`None` 不生成索引，`Some([])` 生成空索引；Darwin 始终包含至少一个空索引。
 
-这一接口编码调用者给定的映射，不从对象文件发现符号。自动符号发现和其他索引格式
-见 [交付计划](ROADMAP.md)。示例使用真实对象文件及其已知符号，并由
-`nm`、C 编译器和链接器检查输出。
+```moonbit
+let symbols = plan.discover_symbols().unwrap()
+let bytes = plan.write(format=@ar.Gnu64, symbols=Some(symbols)).unwrap()
+```
 
-## thin 元数据与外部数据
+`ArchiveBuilder::discover_symbols` 扫描最终成员，返回映射；单个对象可调用
+`symbols_from_object(bytes)`。支持：
 
-`parse_thin(bytes)` 读取 GNU thin，返回 `Result[ThinArchive, ParseError]`。
-普通归档继续使用 `parse`，两种类型不混用。
+- ELF32/64，大小端，可重定位对象；全局、弱、公共、绝对、GNU unique 定义和扩展节号。
+- Mach-O32/64，大小端，`MH_OBJECT` 的符号表；外部定义、弱/公共/绝对及可索引别名。
+- 标准小端 COFF 对象，包括辅助记录、长名称和可解析的弱别名；不把 BSS 虚拟大小当作文件数据。
 
-| 接口 | 结果 |
+排除未定义、局部及不适合归档索引的记录；同一对象内重复名称按首次出现去重，跨成员同名
+符号保持顺序。非对象数据返回空符号数组；已识别的损坏对象返回 `OB001`，不支持的对象
+布局返回 `OB002`。bigobj、import object、PE、LTO/bitcode、fat Mach-O、wasm 和归档容器
+不作为普通可索引对象处理。不能将不支持的已识别对象静默当成空符号对象。
+
+`max_symbols` 默认 1,000,000，按扫描记录计费，包括被过滤的符号；
+`max_symbol_name_bytes` 默认 64 MiB，按展开名称计费。Builder 在全部成员间共享预算，
+避免每个对象各用一份上限。对象失败转为含成员位置的 `WR006`，预算失败转为 `WR003`。
+
+## thin 读取与加载
+
+`parse_thin(bytes)` 返回独立 `ThinArchive`。普通归档使用 `parse`，类型不混用。
+
+| 接口 | 行为 |
 | --- | --- |
-| `member_count()` / `get_member(index)` | 物理记录数量和 `ThinMember`，包含特殊记录 |
-| `symbol_indexes()` | 已校验的 GNU32/64 符号引用；目标使用物理记录序号 |
-| `inline_bytes(index)` | 名称表/符号表的内嵌字节；普通成员或无效序号返回 `None` |
-| `member_path(index)` | 符合默认策略的相对文件路径 |
-| `load_member(index, loader, max_bytes?)` | 调用加载器后核对返回字节和声明大小 |
+| `member_count()` / `get_member(index)` | 包含特殊记录的物理位置与成员信息 |
+| `symbol_indexes()` | GNU32/64 索引，目标为物理成员位置 |
+| `inline_bytes(index)` | 取得名称/符号表字节；普通成员返回 `None` |
+| `member_path(index, allow_parent_paths?)` | 检查外部引用路径 |
+| `load_member(index, loader, max_bytes?, allow_parent_paths?)` | 加载并核对声明大小 |
+| `materialize(loader, drop_symbol_indexes?, allow_parent_paths?, max_bytes?)` | 批量加载为普通 `ArchiveBuilder` |
 
-普通成员的 `ThinMember.size` 表示外部文件的声明大小；这类成员在容器中仅占头部，
-奇数外部大小也不产生内嵌对齐字节。名称和符号表则仍存储在归档内。
-GNU `/name-offset:archive-offset` 嵌套归档引用及 BSD 内嵌名称返回 `AR011`。
+外部成员的声明大小不占据容器字节，也不导致容器奇数补齐。名称表与索引仍内嵌。
+支持直接文件引用；GNU `/name-offset:archive-offset` 嵌套引用和 BSD 内嵌名称返回 `AR011`。
 
-`member_path` 去除 `.` 和重复分隔符，拒绝绝对路径、父目录、反斜杠、
-驱动器/数据流前缀和以目录形式结尾的路径。原始名称始终可通过 `get_member` 读取，
-因此采用其他工作区策略的调用方可以自行处理引用。
+默认路径策略拒绝绝对路径、父目录、反斜杠、驱动器/数据流前缀和目录形式路径。
+`allow_parent_paths=true` 允许 `..`，并保留其操作系统解析顺序，避免越过符号链接时错误地
+进行词法折叠。原始名称始终保留。加载器签名为 `(Bytes, Int) -> Result[Bytes, String]`，
+接收路径和声明大小；库在调用前检查预算，调用后检查长度。
 
-加载器类型为 `(Bytes, Int) -> Result[Bytes, String]`，接收规范化路径和声明字节数。
-库在调用前检查声明大小预算，调用后检查实际返回长度。
-文件根目录、链接解析以及读取过程的内存限制由加载器负责。
-默认库接口不会把路径直接交给文件系统。示例采用显式“成员名→已读取字节”表。
+实际根目录、链接解析和读取内存由加载器负责。`materialize` 的 64 MiB 默认预算是所有
+外部成员累计数据预算，含重复引用；单次 `load_member` 的预算只约束该成员。
+存在索引时，物化必须显式同意丢弃，再由新 Builder 重新发现或指定符号。
 
-同长度的外部文件仍可能发生内容变化；thin 描述的是引用，实际内容以加载时返回的字节为准。
-未加载的 thin 引用不参与普通归档的内容比较。示例可将已加载成员写为普通归档后比较。
+## thin 创建与编辑
 
-## 资源与错误
+`ThinWriteMember::new(name, size, metadata?)` 描述外部文件引用。
+`ThinArchiveBuilder::from_members` 批量创建计划，亦提供 `new`、`append`、`insert`、
+`replace`、`remove`、`move_member`、`members`、`member_count`。
+`thin.edit(drop_symbol_indexes=true)` 导入普通外部成员。
 
-`parse_thin` 沿用 `parse` 的五项预算及默认值，`max_bytes` 只计算 thin 容器。
-`load_member` 默认单个外部成员上限为 64 MiB；批量加载的总预算由调用方管理。
-`write` 同样接受五项预算，计算最终输出字节、物理记录、展开名称和符号。
-输出缓冲区在布局检查完成后分配。现有大小和偏移上限为有符号 32 位整数。
+```moonbit
+let plan = @ar.ThinArchiveBuilder::from_members([
+  @ar.ThinWriteMember::new(b"obj/first.o", 128),
+]).unwrap()
+let bytes = plan.write(symbol_width=64).unwrap()
+```
+
+这里的 `128` 必须对应外部文件真实长度。写出器不访问文件系统，接受调用方提供的符号映射，
+`symbol_width` 为 32 或 64；GNU 名称表、符号引用和成员头偏移自动计算。
+thin 文件不包含对象载荷。自动发现需先加载对象；CLI 已实现此流程。
+
+## 文件级行为
+
+CLI 默认从最终对象集合发现符号，每次编辑后重建索引；`--index none` 显式跳过符号发现，
+thin 普通编辑可不加载已有成员，新输入及物化仍需读取。提取始终读取选定成员。
+thin 的缺失成员可以先删除再重建。
+`rename` 对 thin 表示改变外部引用，自动模式会加载新目标并核对长度。
+另存到新目录时会基于真实路径重定位引用。`convert` 将 thin 物化为普通归档。
+
+文件写入采用同目录临时文件及原子发布；新建默认禁止覆盖，`--force` 明确允许替换，原位编辑
+允许替换。所有加载、索引与布局检查在发布前完成。native 与 Node.js 实现实际文件写入；
+wasm/wasm-gc 使用库接口并由宿主提供加载器。路径检查与打开不是单一文件系统事务，使用者
+应控制构建目录的并发修改。
+
+## 预算与错误
+
+解析及写出接受五项预算：字节、物理记录、展开成员名称、符号数、展开符号名称。
+默认值见 README。thin 的容器预算与外部加载预算分别计算；CLI 外部数据使用累计字节预算。
+写出缓冲区在布局检查完成后分配，大小和偏移上限为有符号 32 位整数。
 
 | 代码 | 含义 |
 | --- | --- |
-| `AR011` | 不支持的 thin 引用编码，或请求的记录不是有效外部成员 |
-| `AR012` | 外部路径不符合默认相对文件策略 |
-| `AR013` | 加载器返回失败 |
-| `AR014` | 返回内容长度与 thin 声明大小不一致 |
-| `AR008` | 解析或加载预算超限、预算参数非法 |
-| `WR001` | 普通成员名称或编辑位置非法 |
-| `WR002` | 元数据不能表示为头部字段 |
-| `WR003` | 写出预算超限或预算参数非法 |
-| `WR004` | 导入已有索引需要显式策略 |
-| `WR005` | 符号名称、目标或索引格式请求非法 |
+| `AR011` | 不支持的 thin 引用或非外部成员 |
+| `AR012` | 外部路径不符合加载策略 |
+| `AR013` | 加载器失败 |
+| `AR014` | 实际长度与声明大小不一致 |
+| `AR008` | 解析/加载预算错误 |
+| `WR001` | 成员名称或位置非法 |
+| `WR002` | 元数据无法写入头部 |
+| `WR003` | 写出/发现预算错误 |
+| `WR004` | 导入索引需要显式处理策略 |
+| `WR005` | 符号名称、目标或索引请求非法 |
+| `WR006` | 成员对象不支持或损坏，消息含对象诊断 |
+| `OB001` / `OB002` / `OB003` | 单对象结构错误 / 不支持 / 预算错误 |
 
-创建和编辑返回字节，不直接覆盖文件。文件级事务与完整编辑命令按
-[阶段计划](ROADMAP.md) 交付。
+更多字段见 [API](API.md)，独立工具与实际消费者见 [复现指南](REVIEW.md)。

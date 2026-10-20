@@ -1,17 +1,27 @@
 # Changes
 
-## Main branch — 2026-10-20
+## 0.3.0 — 2026-10-20
 
 - Add a separate GNU thin archive API with GNU32/64 symbol references,
   caller-controlled member loading, relative-path policy and byte limits.
-- Create deterministic GNU/BSD archives and edit individual duplicate members
-  through immutable append, replace, remove and move operations.
+- Create GNU32/64, BSD32/64 and Darwin32/64 archives with deterministic or preserved
+  metadata, both BSD index byte orders, and individual duplicate-member editing.
 - Require an explicit decision when importing indexed archives for editing;
-  write fresh GNU32 indexes from caller-provided final member mappings.
+  write fresh indexes from caller-provided final member mappings.
 - Add a public workflow example and GNU/LLVM creation, editing, thin
   materialization and real-object linking checks.
-- Define the general Unix ar library scope, delivery stages and acceptance
-  criteria, including thin creation, file operations and automatic indexes.
+- Discover symbols from ELF32/64, Mach-O32/64 and standard COFF objects, sharing
+  symbol count/name budgets across members.
+- Write and edit GNU thin archives with 32/64-bit indexes, relocate references,
+  load external members and materialize ordinary archives.
+- Add list, create, add/insert, replace, delete, move, rename, extract, convert
+  and index commands; rebuild symbols after edits by default.
+- Publish native and Node outputs atomically, enforce overwrite policy, protect
+  source/dependency path aliases and check real external-member paths.
+- Keep JSON list selectors consistent with text output and editor positions.
+- Preserve ordinary-member identity for GNU long names matching reserved headers.
+- Add full CLI/IO regression workflows and a pinned zlib consumer that builds,
+  links, runs, replaces an object and links again through regular and thin output.
 
 ## 0.2.0 — 2026-10-16
 

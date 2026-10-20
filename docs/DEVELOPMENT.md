@@ -9,16 +9,18 @@
 | `names.mbt` | GNU 名称表和 BSD 内嵌名称 |
 | `symbols.mbt` | GNU/BSD 32/64 位索引、字节序约束、字符串与成员引用校验 |
 | `thin.mbt` | GNU thin 的独立容器、外部成员路径和调用者加载器 |
-| `write.mbt` | 不可变成员编辑计划、GNU/BSD 布局和 GNU32 索引写出 |
+| `write.mbt` | 不可变成员编辑计划、GNU/BSD/Darwin 六种布局和索引写出 |
+| `thin_write.mbt` | thin 成员编辑、GNU32/64 写出、累计预算与物化 |
+| `object_symbols.mbt` | ELF/Mach-O/COFF 符号发现、结构约束与跨成员预算 |
 | `compare.mbt` | 内容优先配对、歧义报告、物理与逻辑比较、符号映射和顺序判断 |
 | `json.mbt` | 版本化 JSON 输出与无损名称表示 |
 | `cli/` | 参数解析、命令执行和退出码 |
-| `cmd/main/` | 原生文件读取与命令行入口 |
+| `cmd/main/` | native/Node 文件接口、原子发布、真实路径检查与命令行入口 |
 | `examples/read_deb/` | 通过公共 API 读取 Debian 包外层的示例 |
 | `examples/archive_workflow/` | 创建、编辑、thin 加载和静态库写出的公共 API 消费者 |
 | `tools/` | 示例生成与 GNU/LLVM 对照验证 |
 
-解析库接收完整的 `Bytes`，不访问文件系统。CLI 通过可注入的读取函数调用解析库，
+解析库接收完整的 `Bytes`，不访问文件系统。CLI 通过可注入的读取、写入和路径函数调用库，
 参数和错误处理可以在测试中使用内存数据。公共接口由 `moon info` 生成到
 [pkg.generated.mbti](../pkg.generated.mbti)。
 
@@ -71,6 +73,12 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
   重名插入、跨格式逻辑比较及 GNU/Darwin 64 位索引。
 - `tools/verify_workflow.py` 验证写出的 GNU/BSD、重名编辑、GNU/LLVM thin 加载与物化，
   以及 GNU32 映射的 `nm` 结果和真实对象链接运行。
+- `tools/verify_cli.py` 从真实对象完成全部编辑命令、六种写出布局、自动索引、
+  thin32/64 重定位与物化；检查链接运行及可用工具下的 Mach-O 链接。
+- `tools/verify_io.py` 在 native 与 Node 检查原子发布、并发、Unicode、禁止覆盖、
+  失败保留、真实路径范围与输出别名保护。
+- `tools/verify_zlib.py` 校验上游 zlib 1.3.1 摘要，编译 15 个对象，创建普通及 thin
+  静态库并运行压缩解压；替换对象及物化后重新链接运行。
 - Linux 和 Windows CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
   GNU/LLVM 对照，以及 `dpkg-deb --info` 检查 Debian 示例。
 
@@ -80,6 +88,10 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
    不再假设归档成员大小总是等于归档前的文件大小。
 2. Windows 上 GNU ar 2.30 的标准输出会在所测对象文件上转换换行。二进制对照使用
    临时目录中的提取文件，避免终端输出转换影响结果。
+3. GNU 长名称表可以包含与索引标识同名的普通文件。解析时保留名称引用的普通成员身份，
+   不在解析长名称后重新按字符串分类；写出时强制采用长名称表表示这些成员。
+4. Windows 大小写路径和目录联接可能指向同一文件。输出保护比较真实路径，
+   同时检查 thin 原始依赖和编辑后的依赖，防止强制输出覆盖对象或提取源。
 
 这些检查覆盖已列出的布局与输入，不能据此推断全部历史 ar 变体、对象格式或链接行为均受支持。
 具体提交的运行结果可在 [GitHub Actions](https://github.com/xmyd0915/moonar/actions) 查看。

@@ -80,3 +80,29 @@ test "unused GNU names are validated without populating the lookup map" {
   assert_eq(archive.get_member(1).unwrap().name, b"used")
   assert_eq(archive.member_bytes(1), Some(b"x"))
 }
+
+///|
+test "GNU references to reserved names remain ordinary files" {
+  for
+    name in [
+      b"/", b"//", b"/SYM64/", b"__.SYMDEF", b"__.SYMDEF_64", b"__.SYMDEF SORTED",
+      b"__.SYMDEF_64 SORTED",
+    ] {
+    let archive = parsed(
+      b"!<arch>\n" +
+      record("//", name + b"/\n") +
+      record("/0", b"ordinary content"),
+    )
+    assert_eq(archive.get_member(1).unwrap().name, name)
+    assert_eq(archive.get_member(1).unwrap().kind, Regular)
+    assert_eq(archive.member_bytes(1), Some(b"ordinary content"))
+    assert_eq(archive.symbol_indexes(), [])
+  }
+  // Physical special records still require a valid symbol-index payload.
+  for name in ["/", "/SYM64/", "__.SYMDEF/"] {
+    assert_eq(
+      error_code(b"!<arch>\n" + record(name, b"ordinary content")),
+      "AR009",
+    )
+  }
+}

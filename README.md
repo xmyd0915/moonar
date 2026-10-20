@@ -2,256 +2,182 @@
 
 [![CI](https://github.com/xmyd0915/moonar/actions/workflows/ci.yml/badge.svg)](https://github.com/xmyd0915/moonar/actions/workflows/ci.yml)
 
-MoonAr 是用 MoonBit 编写的 Unix ar 归档库，提供普通归档读取、GNU thin 成员加载、
-GNU/BSD 归档创建、成员编辑、符号索引校验与比较，附带 `inspect`、`check` 和 `diff`
-命令行工具。它可以处理静态库 `.a`，也可以读取 `.deb` 的外层 ar 容器。
+MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它覆盖普通归档和 GNU thin
+归档的读取、创建、编辑、转换、符号索引维护与比较，可用于构建静态库 `.a`、处理构建产物，
+以及读取 `.deb` 的外层容器。核心库直接处理字节，不依赖外部 `ar` 程序。
 
-它面向构建工具、制品处理脚本和包分析工具：创建归档，精确修改重名成员，加载 thin
-外部成员，或排查两次构建的内容、元数据和顺序差异。核心库直接处理字节，
-不启动外部 `ar`，保留重名成员和原始文件名字节，便于其他 MoonBit 程序集成。
+**0.3.0 提供完整的归档编辑流程**：从 ELF、Mach-O 和标准 COFF 对象发现符号，写出
+GNU/BSD/Darwin 归档；追加、插入、替换、删除、移动或重命名后自动重建索引。
+GNU thin 支持直接外部文件引用、32/64 位索引、路径重定位和普通归档物化。
 
-项目目标是实现完整的通用 Unix ar 库，覆盖读取、thin 引用处理、创建、编辑、
-格式转换与符号索引维护。[功能范围与交付计划](docs/ROADMAP.md) 定义了完整版本的
-格式范围、阶段目标和验收标准。已发布的 `0.2.0` 提供读取、索引校验与比较；
-以下 thin、创建和编辑接口可在当前主分支源码中使用。
+## 创建并使用静态库
 
-## 快速开始
-
-需要 [MoonBit 工具链](https://www.moonbitlang.com/download)；native 后端还需要 C 编译器。
-CI 在 Linux 和 Windows 上使用编译器与核心库 `0.10.14+7d59c7ec9` 验证。
-首次下载依赖需要联网，依赖就绪后可离线运行测试和示例。
+安装 [MoonBit 工具链](https://www.moonbitlang.com/download)，native 后端需要 C 编译器。
 
 ```sh
 git clone https://github.com/xmyd0915/moonar.git
 cd moonar
 moon update
-moon run cmd/main --target native -- inspect examples/data/bundle-before.a
+moon build --target native --deny-warn
 ```
 
-输出依次为记录索引、类型、数据大小和名称：
-
-```text
-0	regular	11	"config.txt"
-1	regular	3	"assets.bin"
-```
-
-继续比较两个归档：
+生成的命令位于 `_build/native/debug/build/cmd/main/main.exe`，Linux 也使用此文件名。
+以下用 `moonar` 指代该命令。将两个已有对象创建为带索引的静态库：
 
 ```sh
-moon run cmd/main --target native -- diff examples/data/bundle-before.a examples/data/bundle-time.a --json
+cc -c first.c -o first.o
+cc -c second.c -o second.o
+moonar create libsample.a first.o second.o
+moonar list libsample.a
+cc main.c libsample.a -o demo
 ```
 
-结果中两个成员的 `metadata_changed` 都为 `true`，`payload_changed` 都为 `false`，
-说明成员数据相同、元数据发生了变化。此命令返回 **退出码 1**，表示归档不同。
-
-## 三个使用场景
-
-| 场景 | 输入与操作 | 可观察的结果 |
-| --- | --- | --- |
-| 检查构建产物 | 用 `inspect` 查看归档，用 `check` 检查截断样本 | 列出成员；损坏样本返回错误代码和字节偏移 |
-| 排查构建差异 | 用 `diff` 分别比较时间戳变化和内容变化的样本 | 区分 `metadata_changed` 与 `payload_changed` |
-| 读取 Debian 包外层 | 通过公共库接口读取示例 `.deb` | 找到三个外层成员，读取 `debian-binary` 的 `2.0` 标记 |
-
-完整命令与预期结果见 [示例说明](examples/README.md)。示例 `.a` 包含本项目生成的文本和
-二进制数据；真实 C 对象文件与符号索引另由 GNU/LLVM 对照脚本验证。
-需要集中核对功能与测试时，可从 [复现指南](docs/REVIEW.md) 开始。
-
-## 符号索引与跨方言比较
-
-`inspect --json` 的 `symbol_indexes` 包含索引格式、符号原始名称、目标成员索引，以及
-名称与引用字段的原始字节偏移。`check` 校验容器与索引结构：指向头部中间、数据区、
-特殊记录或文件外部的符号引用返回 `AR009` 和引用字段偏移。
-
-支持 GNU 32/64 位索引和 BSD/Darwin 32/64 位 ranlib 布局。BSD 字节序由完整的边界、
-字符串和成员引用约束判断；两种解释都有效但结果不同的输入返回 `AR010`。
+默认自动发现对象中可索引的定义，并使用确定性元数据。修改其中一个对象后：
 
 ```sh
-moon run cmd/main --target native -- diff before.a after.a --logical --json
+cc -c second.c -o second.o
+moonar replace libsample.a 1 second.o
+moonar move libsample.a 1 0
+moonar extract libsample.a 0 copied.o
 ```
 
-默认 `diff` 比较全部字节和物理记录。`--logical` 比较普通成员及符号到成员的映射，
-分别给出 `content_equal`、`metadata_changed`、`order_changed`、`symbols_equal` 和
-`symbol_index_presence_changed`，同时保留 `bytes_equal`。
+位置是 `list` 给出的**普通成员零基序号**，因此多个同名对象也能分别编辑。
+`list --json` 使用相同序号；`inspect` 则展示包含名称表和符号表的物理记录。
 
-同一长名称和内容使用 GNU 名称表或 BSD 内嵌名称时，可以得到 `bytes_equal=false`、
-`content_equal=true`。索引宽度和绝对偏移改变，但符号仍指向同一个已配对成员时，
-`symbols_equal` 保持为 `true`。同名符号的目标次序仍然参与比较。
+无需准备 C 文件即可运行仓库中的 [读取与比较示例](examples/README.md)。完整的真实对象
+创建、编辑和链接流程由 [verify_cli.py](tools/verify_cli.py) 自动执行。
 
-重名成员先按相同类型、原始名称和相同内容配对，再按出现次序处理剩余项。
-在 `[one, two]` 前插入内容为 `new` 的同名项，只产生一项新增；交换原成员则报告顺序变化。
-多个候选内容相同或剩余项无法唯一识别时，`ambiguities` 列出相关成员。
-完整设计与可复现案例见 [比较说明](docs/COMPARISON.md)。
+## GNU thin 工作流
 
-## 命令行用法
-
-```text
-inspect FILE [--json]         列出物理记录、大小、类型和名称
-check FILE [--json]           检查受支持的容器结构
-diff BEFORE AFTER [--json] [--logical] 比较归档字节、成员或逻辑映射
---help | --version
+```sh
+moonar create libthin.a first.o second.o --thin
+moonar replace libthin.a 1 second.o
+moonar convert libthin.a libpacked.a
 ```
 
-在仓库中用 `moon run cmd/main --target native --` 加上述参数运行。
-也可执行 `moon build --target native`，直接使用生成的
-`_build/native/debug/build/cmd/main/main.exe`；Linux 上该文件也使用 `.exe` 后缀。
+thin 保存外部成员引用，普通归档保存成员数据。编辑 thin 会保留 thin 存储方式；
+`convert` 将成员加载后写成普通归档。`--output` 写到另一个目录时会重新计算引用路径。
+默认加载范围为归档所在目录及其子目录，真实路径检查会处理符号链接与 Windows 目录联接。
+构建目录确需引用父目录时显式加 `--allow-parent-paths`。
 
-`--max-bytes N`、`--max-members N`、`--max-name-bytes N`、`--max-symbols N` 和
-`--max-symbol-name-bytes N` 可调整解析限制。文件名以 `-` 开头时，在路径前加 `--`。
-文本输出会转义名称中的控制字符；自动化脚本可以使用 `--json`。
+`check` 只校验容器和索引，不加载外部文件；自动索引、提取和物化会核对外部文件是否存在、
+声明大小是否匹配以及累计数据预算。删除已丢失的 thin 成员后仍可重新建立有效索引。
 
-| 命令 | 退出码 0 | 退出码 1 | 退出码 2 |
-| --- | --- | --- | --- |
-| inspect / check | 成功 | 容器无效或超出限制 | 参数或文件读取失败 |
-| diff | 字节完全相同 | 字节不同 | 参数、读取或任一输入解析失败 |
-| diff --logical | 内容、已配对元数据、顺序、索引映射与存在性相同，且配对无歧义 | 任一维度不同或配对有歧义 | 参数、读取或任一输入解析失败 |
+## 命令与格式
 
-JSON 输出包含 `schema_version: 1`。解析和读取错误在 JSON 模式下写到标准输出，
-参数错误写到标准错误。字段定义和错误代码见 [API 说明](docs/API.md)。
+| 命令 | 功能 |
+| --- | --- |
+| `list FILE` / `inspect FILE` / `check FILE` | 普通成员列表、物理记录、结构校验 |
+| `create OUT [FILES...]` | 创建普通归档；`--thin` 创建 GNU thin |
+| `add ARCHIVE FILES... [--at N]` | 追加或从指定位置插入 |
+| `replace ARCHIVE INDEX FILE` | 替换一个成员；普通归档保留其原名称 |
+| `delete ARCHIVE INDEX...` | 删除指定成员 |
+| `move ARCHIVE FROM TO` | 移到最终位置，保留其他成员的相对顺序 |
+| `rename ARCHIVE INDEX NAME` | 修改名称；thin 中修改的是外部引用 |
+| `extract ARCHIVE INDEX OUT` | 将指定成员写入明确的输出路径 |
+| `convert ARCHIVE OUT` | 转换普通归档布局，或将 thin 物化 |
+| `index ARCHIVE` | 从对象重新发现符号并建立索引 |
+| `diff BEFORE AFTER [--logical]` | 比较普通归档的物理字节或逻辑内容 |
 
-## 创建、编辑与 thin 成员
+写出选项：
 
-`ArchiveBuilder` 从普通成员序列创建 GNU/BSD 归档。默认使用确定性元数据，
-也可选择保留时间戳、用户/组和模式。`append`、`replace`、`remove`、`move_member`
-返回新的编辑结果，按普通成员的零基序号定位，能够独立修改重名项。
+- `--format gnu|gnu64|bsd|bsd64|darwin|darwin64`，默认 `gnu`；thin 支持 GNU32/64。
+- `--index auto|none`，默认 `auto`。非对象数据可正常打包；已识别但不支持的对象格式
+  在自动模式下明确报错。`none` 跳过发现；Darwin 布局仍包含必要的空索引。
+- `--output FILE` 将编辑结果写到新路径；新输出存在时需要 `--force`。
+- `--preserve-metadata` 保留已有成员的元数据；新输入采用确定性元数据。
+- `--big-endian-index` 选择 BSD/Darwin 大端索引，默认小端。
+- `--json` 输出结构化结果；文件名以 `-` 开头时使用 `--`。
+
+文件修改在完成校验后写入同目录临时文件，再原子发布。失败保留原文件；新建默认禁止覆盖，
+原位编辑允许替换。输出不能覆盖提取源或 thin 依赖成员。native 和 Node.js CLI 提供文件
+写入能力；核心库及不依赖文件系统的命令逻辑支持 native、JavaScript、wasm、wasm-gc。
+
+查询成功退出 0，无效归档退出 1，参数或读取错误退出 2。编辑成功退出 0，失败退出 2。
+`diff` 相同退出 0、不同退出 1、输入错误退出 2；逻辑比较还将配对歧义视为不同。
+详细约定见 [API 与 JSON](docs/API.md)。
+
+## 作为 MoonBit 库使用
+
+```sh
+moon add xmyd0915/moonar@0.3.0
+```
+
+在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
 
 ```moonbit
-let builder = @ar.ArchiveBuilder::new()
-let builder = builder.append(@ar.WriteMember::new(b"hello.txt", b"hello\n")).unwrap()
-let output = builder.write(format=@ar.Gnu).unwrap()
+let plan = @ar.ArchiveBuilder::from_members([
+  @ar.WriteMember::new(b"hello.txt", b"hello\n"),
+]).unwrap()
+let bytes = plan.write(format=@ar.Gnu).unwrap()
+let archive = @ar.parse(bytes).unwrap()
+let data = archive.member_bytes(0).unwrap()
 ```
 
-带索引的归档导入编辑器时需要显式选择索引策略。最终写出可提供 `WriteSymbol`
-列表生成 GNU32 索引，目标按编辑完成后的普通成员序号指定，偏移由写出器重新计算。
+对象归档使用 `plan.discover_symbols()` 获取最终成员映射，再传给
+`plan.write(symbols=Some(symbols))`。thin 使用独立的 `ThinArchiveBuilder` 和 `parse_thin`；
+加载器由调用方提供，解析不隐式访问磁盘。库接口返回 `Result`，示例中的 `unwrap()`
+适用于固定有效输入。详见 [读写 API](docs/WRITING.md) 和 [生成接口](pkg.generated.mbti)。
 
-`parse_thin` 返回独立的 `ThinArchive`，区分内嵌名称/符号表和外部成员。
-`load_member` 由调用方提供加载器，并核对路径、预算和声明大小；解析本身不访问磁盘。
-原始路径通过成员记录保留。详情见 [读写与 thin 接口](docs/WRITING.md)。
+## 格式范围与比较
 
-公共 API 示例创建含二进制、空成员和重名项的 GNU/BSD 归档：
+| 能力 | 支持范围 |
+| --- | --- |
+| 读取与写出 | GNU32/64、BSD32/64、Darwin32/64；BSD/Darwin 索引支持大小端 |
+| thin | GNU 直接外部文件引用，GNU32/64 索引，创建、编辑、加载、重定位与物化 |
+| 自动符号发现 | ELF32/64 与 Mach-O32/64 大小端可重定位对象、标准小端 COFF 对象 |
+| 成员 | 原始名称字节、长名称、重名、空内容、二进制数据和元数据 |
+| 比较 | 物理字节、普通成员内容、元数据、顺序、符号映射与重名配对歧义 |
 
-```sh
-moon run examples/archive_workflow --target native -- create output.a gnu
-moon run examples/archive_workflow --target native -- edit output.a edited.a
-```
+自动发现保留可索引的全局、弱定义、公共符号和绝对符号，排除未定义与局部符号。
+GNU 保留名称可作为长名称普通成员写出；BSD/Darwin 会拒绝与索引记录冲突的名称。
+Darwin 的对齐字节可能包含在成员声明大小内，提取时保留，与 LLVM 行为一致。
 
-[完整工作流](examples/archive_workflow/README.md) 还展示 thin 成员加载、物化为普通归档，
-以及从真实对象和显式符号映射生成可链接静态库。
+`diff --logical` 可以识别 GNU 名称表与 BSD 内嵌名称等布局变化，分别报告内容、元数据、
+顺序与符号映射。重名成员优先按相同内容配对，无法唯一识别时报告 `ambiguities`。
+设计和案例见 [比较说明](docs/COMPARISON.md)。
 
-## 作为库使用
+明确的格式边界：GNU thin 嵌套 archive-offset 引用、COFF 双 linker-member 归档、
+COFF bigobj/import object、LTO/bitcode、fat Mach-O、AIX big archive 不在 0.3.0 支持范围内。
+`check` 校验容器和索引结构，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
+内层 tar 解压、链接器实现和包签名校验不属于本库职责。
 
-在自己的 MoonBit 项目中添加 [MoonCakes 包](https://mooncakes.io/docs/xmyd0915/moonar)：
-
-```sh
-moon add xmyd0915/moonar@0.2.0
-```
-
-在调用包的 `moon.pkg` 中声明导入：
-
-```moonbit
-import {
-  "xmyd0915/moonar" @ar,
-}
-```
-
-```moonbit
-fn inspect_bytes(input : Bytes) -> Unit {
-  match @ar.parse(input) {
-    Ok(archive) => {
-      for i = 0; i < archive.member_count(); i = i + 1 {
-        let entry = archive.get_member(i).unwrap()
-        println("\{entry.name_hex()}: \{entry.size} bytes")
-      }
-    }
-    Err(error) => println("\{error.code} at byte \{error.offset}")
-  }
-}
-```
-
-`parse` 返回 `Result[Archive, ParseError]`。成功后可用 `get_member(index)` 读取成员信息，
-用 `member_bytes(index)` 取得数据副本；两者在索引越界时均返回 `None`。
-比较两个已解析的归档可调用 `@ar.compare(before, after)`；逻辑比较使用 `@ar.compare_logical`。
-`archive.symbol_indexes()` 返回已校验的符号映射及数组副本，修改返回数组不会破坏内部引用。
-
-名称不保证是 UTF-8。需要保留名称时使用 `entry.name` 或 `name_hex()`；
-`name_text()` 仅用于显示。完整接口见 [pkg.generated.mbti](pkg.generated.mbti)，
-文件读取和成员数据访问示例见 [read_deb](examples/read_deb/main.mbt)。
-
-## 支持范围
-
-- 普通 ar、GNU 长名称表、BSD 内嵌名称，以及 LLVM Darwin 写出的布局。
-- 符号表和名称表保留为独立物理记录。GNU 32/64 位及 BSD 32/64 位大小端索引解码为
-  符号到普通成员的引用，SORTED 索引还检查名称顺序。
-- 重名项按完整内容优先匹配；哈希碰撞后仍检查字节相等。配对稳定，并明确报告歧义。
-- `bytes_equal` 比较全部输入字节；`order_changed` 比较已配对记录的相对顺序，
-  单纯新增或删除一项不算重排。特殊记录也参与比较。
-- `payload_changed` 和 `metadata_changed` 只对 `modified` 项有意义。
-  头部数字的空格写法或名称编码布局不同，可能只有 `bytes_equal=false`。
-- Darwin 可能把填充换行计入声明的数据大小。MoonAr 保留这些字节，
-  与 `llvm-ar` 提取出的成员数据一致。Darwin 确定性重名归档可能调整时间戳，这类变化
-  在内容匹配后仍作为元数据报告。
-
-普通归档写出支持 GNU/BSD；索引写出接受调用者提供的 GNU32 符号映射。
-thin 读取支持直接外部文件引用，嵌套归档偏移引用返回 `AR011`。
-thin 写出、Darwin 专用写出、对象符号自动发现及文件编辑 CLI 按
-[阶段计划](docs/ROADMAP.md) 扩展。现有查询 CLI 接收普通归档；thin 使用公共库接口。
-
-目录解压、对象指令或 ABI 分析、`.deb` 内层 tar 解压不在当前接口内。
-`check` 检查容器与索引结构，不解析对象内部定义，因此
-不证明索引中的符号确由目标对象定义，也不验证链接结果、ABI 或包签名。
-多个符号索引及 COFF 双 linker-member 布局返回 `AR010`。
-
-## 资源限制
-
-`parse` 默认允许输入 64 MiB、100,000 条物理记录、展开后成员名 64 MiB、1,000,000 个符号、
-展开后符号名 64 MiB。重复引用同一个名称也计入展开后的预算。
-库和 CLI 均可调整五项限制，参数必须非负。大小和偏移使用有符号 32 位整数。
-
-CLI **先读完整文件，再检查解析限制**，因此 `--max-bytes` 不是文件读取的内存上限。
-比较和 JSON 输出还需要额外内存。当前版本使用完整的内存输入，不支持流式读取。
-
-## 测试与复现
+## 验证与实际消费者
 
 ```sh
 moon fmt --check
 moon check --target all --deny-warn
 moon test --target all --deny-warn
 moon build --target native --deny-warn
-python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe
-moon run examples/read_deb --target native
+python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe
+python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe
+python tools/verify_package.py
 ```
 
-测试覆盖 GNU/BSD 名称、重名插入与重排、配对歧义、符号索引、BSD 字节序歧义、跨方言比较、
-JSON、截断、字节变异、资源限制和 CLI 退出码。同一组测试运行在四个后端上。
-Python 3.9+ 用于复核示例文件、预期输出及退出码。
+独立工具验证需要 GNU ar/nm、LLVM ar、C 编译器和 Python 3.9+。真实项目验证固定使用
+**zlib 1.3.1**：校验源码摘要，编译对象，用 MoonAr 分别创建普通及 thin 静态库，链接执行
+压缩/解压往返，再替换对象并重新链接执行。源码在临时目录处理，不随 MoonAr 分发。
+完整入口、预期结果及平台范围见 [复现指南](docs/REVIEW.md)。
+发行 ZIP 另通过独立 MoonBit 消费模块验证公开接口。
 
-有 GNU ar/nm、LLVM ar 和 gcc/cc 的环境还可运行独立工具对照：
+[Linux / Windows CI](.github/workflows/ci.yml) 固定编译器与 core
+`0.10.14+7d59c7ec9`，运行四后端测试、真实文件操作和独立消费者检查。
+GNU/LLVM、Python 与 C 编译器仅用于构建或验证；核心库只依赖 MoonBit core。
 
-```sh
-python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
-python tools/verify_workflow.py --workflow _build/native/debug/build/examples/archive_workflow/archive_workflow.exe --require-llvm
-```
+## 资源与文档
 
-脚本从本项目的输入生成归档，核对成员列表、提取结果和真实 C 对象的符号映射，覆盖
-损坏索引、重名插入、跨方言逻辑比较和 GNU/Darwin 64 位索引。Linux CI 强制运行 LLVM 对照；
-本地省略 `--require-llvm` 时，
-缺少 LLVM 会明确显示跳过。验证范围与实现细节见 [开发说明](docs/DEVELOPMENT.md)。
+默认预算：64 MiB 输入/输出、100,000 条物理记录、64 MiB 展开成员名、1,000,000 个符号、
+64 MiB 展开符号名。CLI 通过 `--max-bytes`、`--max-members`、`--max-name-bytes`、
+`--max-symbols`、`--max-symbol-name-bytes` 调整。符号发现对扫描数量计费，重复引用按
+展开长度计费。大小和偏移使用有符号 32 位整数。
 
-`verify_workflow.py` 让 GNU/LLVM 读取 MoonAr 创建和编辑的归档，核对每个重名成员的字节；
-再读取参考工具生成的 thin 归档并物化，最后用 `nm` 检查写出的索引并编译、链接、运行
-真实 C 程序。
+CLI 先读取完整文件再检查预算；比较、输出和对象发现需要额外内存。当前接口使用内存输入，
+不提供流式读写。文件系统路径检查与打开之间存在并发替换窗口，调用方应控制构建目录的写入。
 
-解析库只使用 MoonBit core；CLI 和文件读取示例使用 `moonbitlang/x@0.5.5`。
-Python、GNU ar 和 LLVM ar 用于验证，不是解析库的运行依赖。
-
-## 文档与许可证
-
-- [三个使用场景](examples/README.md)
-- [复现指南](docs/REVIEW.md)
-- [比较设计与案例](docs/COMPARISON.md)
-- [创建、编辑与 thin API](docs/WRITING.md)
-- [通用库范围、阶段目标与验收](docs/ROADMAP.md)
-- [API、JSON 与错误代码](docs/API.md)
-- [代码结构与验证说明](docs/DEVELOPMENT.md)
-- [来源与实现说明](ORIGINS.md)
+- [读写、thin、自动符号发现与错误](docs/WRITING.md)
+- [通用库范围、交付阶段与验收标准](docs/ROADMAP.md)
+- [API 与 JSON](docs/API.md)、[代码结构](docs/DEVELOPMENT.md)
+- [复现指南](docs/REVIEW.md)、[来源说明](ORIGINS.md)、[版本记录](CHANGELOG.md)
 
 项目使用 [MIT 许可证](LICENSE)。

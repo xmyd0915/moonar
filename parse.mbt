@@ -202,7 +202,10 @@ fn parse_records(
               "GNU name reference is not an entry boundary",
             )
           Some(name) =>
-            records[index] = { ..entry, name, kind: member_kind(name), }
+            // A GNU string-table reference denotes an ordinary record.
+            // Its resolved filename may equal an index spelling without
+            // becoming a physical symbol or name table.
+            records[index] = { ..entry, name, }
         }
     }
   }

@@ -2,6 +2,13 @@
 package "xmyd0915/moonar/cmd/main"
 
 // Values
+pub fn atomic_write(String, Bytes, Bool) -> Result[Unit, String]
+
+pub fn canonical_path(String) -> Result[String, String]
+
+pub fn check_member_path(String, String) -> Result[Unit, String]
+
+pub fn cli_argument_start() -> Int
 
 // Errors
 

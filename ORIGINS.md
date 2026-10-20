@@ -18,6 +18,11 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
   `.deb` 外层 ar 成员与 `debian-binary` 版本标记。
 - [MoonBit 包文档](https://docs.moonbitlang.com/en/latest/language/packages.html)：
   包与类型的访问控制，用于封装 `Archive` 的内部存储。
+- [System V ELF ABI](https://gabi.xinuos.com/elf/contents.html)：ELF 头部、节与符号表。
+- [LLVM MachO.h](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/include/llvm/BinaryFormat/MachO.h)：
+  Mach-O 对象、加载命令与符号标志的格式定义。
+- [Microsoft PE/COFF 格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)：
+  COFF 对象头、节、符号、字符串及辅助记录。
 
 实现所覆盖的格式和限制见 [README](README.md)。
 
@@ -41,3 +46,10 @@ Debian 示例只包含一个控制文件和一个问候文本文件，没有安�
 运行时在临时目录编译并生成归档，用于与 GNU/LLVM 的输出比较。
 
 这些示例和验证脚本使用本仓库的 MIT 许可证，未包含外部 SDK 或第三方软件包内容。
+
+`tools/verify_zlib.py` 使用 [zlib 1.3.1 官方源码](https://zlib.net/fossils/zlib-1.3.1.tar.gz)
+作为真实构建消费者，SHA-256 固定为
+`9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23`。
+脚本在临时目录下载、核对、解压与编译；也接受同摘要的本地缓存。zlib 源码采用上游
+zlib 许可证，其原始版权和许可文件保留在临时源码目录，不随 MoonAr 发布包分发。
+此版本作为固定的兼容性样本使用。

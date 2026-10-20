@@ -62,3 +62,18 @@ python tools/verify_workflow.py --workflow _build/native/debug/build/examples/ar
 
 需要 GNU ar/nm、gcc/cc 和 LLVM ar。脚本还覆盖确定性字节、GNU/BSD 提取、重名编辑、
 参考工具 thin 输入、加载失败和物化结果。对象替换后再次链接运行，核对函数结果发生预期变化。
+
+## 通用命令与自动索引
+
+上述示例保留了显式符号映射的公共 API 用法。通常的文件工作流直接使用主 CLI，
+自动从 ELF、Mach-O 或标准 COFF 对象生成索引：
+
+```sh
+moon run cmd/main --target native -- create library.a alpha.o beta.o
+moon run cmd/main --target native -- replace library.a 0 replacement-alpha.o
+moon run cmd/main --target native -- create library-thin.a alpha.o beta.o --thin
+moon run cmd/main --target native -- convert library-thin.a library-packed.a
+```
+
+主 CLI 提供覆盖保护与原子发布。完整选项见 [README](../../README.md)，
+完整编辑验收及真实 zlib 构建见 [复现指南](../../docs/REVIEW.md)。

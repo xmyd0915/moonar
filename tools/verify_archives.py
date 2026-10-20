@@ -197,7 +197,15 @@ def check_objects(exe, archiver, cc, cwd):
     diff = report(exe, cwd, "diff", "deterministic.a", "recompiled.a", expected=1)
     assert any(c["member_kind"] == "regular" and c["payload_changed"] for c in diff["changes"]), diff
     run([archiver, "rcsT", "thin.a", obj], cwd)
-    assert report(exe, cwd, "check", "thin.a", expected=1)["error"]["code"] == "AR007"
+    thin = report(exe, cwd, "check", "thin.a")
+    assert thin["format"] == "thin"
+    external = regular(thin)
+    assert len(external) == 1 and external[0]["name_display"] == obj
+    assert external[0]["external"] is True
+    assert external[0]["size"] == (cwd / obj).stat().st_size
+    assert "data_offset" not in external[0]
+    assert thin["byte_length"] == (cwd / "thin.a").stat().st_size
+    assert thin["symbol_indexes"][0]["symbols"][0]["member_index"] == external[0]["index"]
     truncated = (cwd / "deterministic.a").read_bytes()[:-1]
     (cwd / "truncated.a").write_bytes(truncated)
     assert report(exe, cwd, "check", "truncated.a", expected=1)["error"]["code"] in {"AR002", "AR003"}

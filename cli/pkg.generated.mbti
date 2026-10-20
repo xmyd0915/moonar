@@ -3,6 +3,7 @@ package "xmyd0915/moonar/cli"
 
 import {
   "moonbitlang/core/debug",
+  "xmyd0915/moonar",
 }
 
 // Values
@@ -10,7 +11,7 @@ pub fn help() -> String
 
 pub fn parse_args(Array[String]) -> Result[Request, String]
 
-pub fn run(Request, (String) -> Result[Bytes, String]) -> Reply
+pub fn run(Request, (String) -> Result[Bytes, String], write? : (String, Bytes, Bool) -> Result[Unit, String], validate_path? : (String, String) -> Result[Unit, String], canonical? : (String) -> Result[String, String]) -> Reply
 
 // Errors
 
@@ -19,12 +20,31 @@ pub(all) enum Command {
   Help
   Version
   Inspect(String)
+  List(String)
   Check(String)
   Diff(String, String)
+  Manage(ManageOptions)
 } derive(Eq, @debug.Debug)
 pub fn Command::equal(Self, Self) -> Bool
 pub fn Command::not_equal(Self, Self) -> Bool
 pub fn Command::to_repr(Self) -> @debug.Repr
+
+pub(all) struct ManageOptions {
+  operation : String
+  arguments : Array[String]
+  output : String?
+  format : @moonar.WriteFormat
+  thin : Bool
+  index_mode : String
+  preserve : Bool
+  force : Bool
+  at : Int?
+  allow_parent : Bool
+  little_endian : Bool
+} derive(Eq, @debug.Debug)
+pub fn ManageOptions::equal(Self, Self) -> Bool
+pub fn ManageOptions::not_equal(Self, Self) -> Bool
+pub fn ManageOptions::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Reply {
   exit_code : Int

@@ -14,6 +14,8 @@ pub fn parse(Bytes, max_members? : Int, max_bytes? : Int, max_name_bytes? : Int,
 
 pub fn parse_thin(Bytes, max_members? : Int, max_bytes? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[ThinArchive, ParseError]
 
+pub fn symbols_from_object(Bytes, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Array[Bytes], ObjectError]
+
 // Errors
 
 // Types and methods
@@ -29,7 +31,9 @@ pub fn Archive::to_repr(Self) -> @debug.Repr
 
 type ArchiveBuilder derive(@debug.Debug)
 pub fn ArchiveBuilder::append(Self, WriteMember) -> Result[Self, WriteError]
+pub fn ArchiveBuilder::discover_symbols(Self, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Array[WriteSymbol], WriteError]
 pub fn ArchiveBuilder::from_members(Array[WriteMember]) -> Result[Self, WriteError]
+pub fn ArchiveBuilder::insert(Self, Int, WriteMember) -> Result[Self, WriteError]
 pub fn ArchiveBuilder::member_count(Self) -> Int
 pub fn ArchiveBuilder::members(Self) -> Array[WriteMember]
 pub fn ArchiveBuilder::move_member(Self, Int, Int) -> Result[Self, WriteError]
@@ -37,7 +41,7 @@ pub fn ArchiveBuilder::new() -> Self
 pub fn ArchiveBuilder::remove(Self, Int) -> Result[Self, WriteError]
 pub fn ArchiveBuilder::replace(Self, Int, WriteMember) -> Result[Self, WriteError]
 pub fn ArchiveBuilder::to_repr(Self) -> @debug.Repr
-pub fn ArchiveBuilder::write(Self, format? : WriteFormat, metadata? : WriteMetadata, symbols? : Array[WriteSymbol]?, max_bytes? : Int, max_members? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Bytes, WriteError]
+pub fn ArchiveBuilder::write(Self, format? : WriteFormat, metadata? : WriteMetadata, symbols? : Array[WriteSymbol]?, index_little_endian? : Bool, max_bytes? : Int, max_members? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Bytes, WriteError]
 
 pub(all) enum ChangeKind {
   Added
@@ -134,6 +138,15 @@ pub fn Metadata::equal(Self, Self) -> Bool
 pub fn Metadata::not_equal(Self, Self) -> Bool
 pub fn Metadata::to_repr(Self) -> @debug.Repr
 
+pub(all) struct ObjectError {
+  code : String
+  offset : Int
+  message : String
+} derive(Eq, @debug.Debug)
+pub fn ObjectError::equal(Self, Self) -> Bool
+pub fn ObjectError::not_equal(Self, Self) -> Bool
+pub fn ObjectError::to_repr(Self) -> @debug.Repr
+
 pub(all) struct ParseError {
   code : String
   offset : Int
@@ -165,13 +178,29 @@ pub fn SymbolIndex::to_repr(Self) -> @debug.Repr
 
 type ThinArchive derive(@debug.Debug)
 pub fn ThinArchive::byte_length(Self) -> Int
+pub fn ThinArchive::edit(Self, drop_symbol_indexes? : Bool) -> Result[ThinArchiveBuilder, WriteError]
 pub fn ThinArchive::get_member(Self, Int) -> ThinMember?
 pub fn ThinArchive::inline_bytes(Self, Int) -> Bytes?
-pub fn ThinArchive::load_member(Self, Int, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int) -> Result[Bytes, ParseError]
+pub fn ThinArchive::load_member(Self, Int, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool) -> Result[Bytes, ParseError]
+pub fn ThinArchive::materialize(Self, (Bytes, Int) -> Result[Bytes, String], drop_symbol_indexes? : Bool, allow_parent_paths? : Bool, max_bytes? : Int) -> Result[ArchiveBuilder, ParseError]
 pub fn ThinArchive::member_count(Self) -> Int
-pub fn ThinArchive::member_path(Self, Int) -> Result[Bytes, ParseError]
+pub fn ThinArchive::member_path(Self, Int, allow_parent_paths? : Bool) -> Result[Bytes, ParseError]
 pub fn ThinArchive::symbol_indexes(Self) -> Array[SymbolIndex]
+pub fn ThinArchive::to_json(Self) -> Json
 pub fn ThinArchive::to_repr(Self) -> @debug.Repr
+
+type ThinArchiveBuilder derive(@debug.Debug)
+pub fn ThinArchiveBuilder::append(Self, ThinWriteMember) -> Result[Self, WriteError]
+pub fn ThinArchiveBuilder::from_members(Array[ThinWriteMember]) -> Result[Self, WriteError]
+pub fn ThinArchiveBuilder::insert(Self, Int, ThinWriteMember) -> Result[Self, WriteError]
+pub fn ThinArchiveBuilder::member_count(Self) -> Int
+pub fn ThinArchiveBuilder::members(Self) -> Array[ThinWriteMember]
+pub fn ThinArchiveBuilder::move_member(Self, Int, Int) -> Result[Self, WriteError]
+pub fn ThinArchiveBuilder::new() -> Self
+pub fn ThinArchiveBuilder::remove(Self, Int) -> Result[Self, WriteError]
+pub fn ThinArchiveBuilder::replace(Self, Int, ThinWriteMember) -> Result[Self, WriteError]
+pub fn ThinArchiveBuilder::to_repr(Self) -> @debug.Repr
+pub fn ThinArchiveBuilder::write(Self, metadata? : WriteMetadata, symbols? : Array[WriteSymbol]?, symbol_width? : Int, max_bytes? : Int, max_members? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Bytes, WriteError]
 
 pub(all) struct ThinMember {
   name : Bytes
@@ -186,6 +215,16 @@ pub fn ThinMember::name_text(Self) -> String
 pub fn ThinMember::not_equal(Self, Self) -> Bool
 pub fn ThinMember::to_repr(Self) -> @debug.Repr
 
+pub(all) struct ThinWriteMember {
+  name : Bytes
+  size : Int
+  metadata : Metadata
+} derive(Eq, @debug.Debug)
+pub fn ThinWriteMember::equal(Self, Self) -> Bool
+pub fn ThinWriteMember::new(Bytes, Int, metadata? : Metadata) -> Self
+pub fn ThinWriteMember::not_equal(Self, Self) -> Bool
+pub fn ThinWriteMember::to_repr(Self) -> @debug.Repr
+
 pub(all) struct WriteError {
   code : String
   member_index : Int?
@@ -197,7 +236,11 @@ pub fn WriteError::to_repr(Self) -> @debug.Repr
 
 pub(all) enum WriteFormat {
   Gnu
+  Gnu64
   Bsd
+  Bsd64
+  Darwin
+  Darwin64
 } derive(Eq, @debug.Debug)
 pub fn WriteFormat::equal(Self, Self) -> Bool
 pub fn WriteFormat::not_equal(Self, Self) -> Bool

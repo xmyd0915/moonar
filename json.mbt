@@ -54,6 +54,44 @@ fn member_json(entry : Member, index : Int) -> Json {
 }
 
 ///|
+/// Thin member sizes describe external files; no inline data offset is exposed.
+pub fn ThinArchive::to_json(self : ThinArchive) -> Json {
+  let entries : Array[Json] = []
+  for i = 0; i < self.member_count(); i = i + 1 {
+    let entry = self.get_member(i).unwrap()
+    entries.push(
+      Json::object({
+        "index": Json(i),
+        "name_display": Json(entry.name_text()),
+        "name_hex": Json(entry.name_hex()),
+        "kind": Json(entry.kind.label()),
+        "header_offset": Json(entry.header_offset),
+        "size": Json(entry.size),
+        "external": Json(entry.kind == Regular),
+        "metadata": Json::object({
+          "timestamp": metadata_value(entry.metadata.timestamp),
+          "uid": metadata_value(entry.metadata.uid),
+          "gid": metadata_value(entry.metadata.gid),
+          "mode": metadata_value(entry.metadata.mode),
+        }),
+      }),
+    )
+  }
+  let symbols = self.archive.to_json()
+  let index_json = match symbols {
+    Object(fields) => fields.get("symbol_indexes").unwrap()
+    _ => Json::array([])
+  }
+  Json::object({
+    "schema_version": Json(1),
+    "format": Json("thin"),
+    "byte_length": Json(self.byte_length()),
+    "members": Json::array(entries),
+    "symbol_indexes": index_json,
+  })
+}
+
+///|
 /// Schema version 1. Display names may be lossy; name_hex is the raw identity.
 /// Metadata numbers use decimal strings or null. Offsets and sizes are integers.
 pub fn Archive::to_json(self : Archive) -> Json {

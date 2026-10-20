@@ -284,7 +284,11 @@ pub fn parse_thin(
 }
 
 ///|
-fn thin_relative_path(name : Bytes, offset : Int) -> Bytes raise InvalidArchive {
+fn thin_relative_path(
+  name : Bytes,
+  offset : Int,
+  allow_parent_paths? : Bool = false,
+) -> Bytes raise InvalidArchive {
   if name.is_empty() || name[0] == b'/' {
     reject("AR012", offset, "external member path must be relative")
   }
@@ -306,12 +310,12 @@ fn thin_relative_path(name : Bytes, offset : Int) -> Bytes raise InvalidArchive 
       cursor += 1
     }
     let part = name[start:cursor]
-    if cursor == name.length() && part == b"."[:] {
+    if cursor == name.length() && (part == b"."[:] || part == b".."[:]) {
       reject(
         "AR012", offset, "external member path must end in a file component",
       )
     }
-    if part == b".."[:] {
+    if part == b".."[:] && !allow_parent_paths {
       reject(
         "AR012", offset, "external member path contains a parent component",
       )
@@ -334,12 +338,13 @@ fn thin_relative_path(name : Bytes, offset : Int) -> Bytes raise InvalidArchive 
 
 ///|
 /// Return a portable relative path, removing "." and repeated "/" components.
-/// Absolute, parent, backslash, drive/stream and directory-ending paths fail
-/// with AR012. Raw names remain available through get_member for callers with
-/// a different path policy.
+/// Absolute, backslash, drive/stream and directory-ending paths fail with AR012.
+/// Parent components require allow_parent_paths=true and remain in the returned
+/// path so callers can resolve them relative to the archive directory.
 pub fn ThinArchive::member_path(
   self : ThinArchive,
   index : Int,
+  allow_parent_paths? : Bool = false,
 ) -> Result[Bytes, ParseError] {
   guard self.archive.records.get(index) is Some(entry) else {
     return Err({
@@ -355,7 +360,7 @@ pub fn ThinArchive::member_path(
       message: "thin record is not an external member",
     })
   }
-  Ok(thin_relative_path(entry.name, entry.header_offset)) catch {
+  Ok(thin_relative_path(entry.name, entry.header_offset, allow_parent_paths~)) catch {
     InvalidArchive(error) => Err(error)
   }
 }
@@ -370,6 +375,7 @@ pub fn ThinArchive::load_member(
   index : Int,
   loader : (Bytes, Int) -> Result[Bytes, String],
   max_bytes? : Int = 67108864,
+  allow_parent_paths? : Bool = false,
 ) -> Result[Bytes, ParseError] {
   if max_bytes < 0 {
     return Err({
@@ -378,7 +384,7 @@ pub fn ThinArchive::load_member(
       message: "limits must be nonnegative",
     })
   }
-  let path = match self.member_path(index) {
+  let path = match self.member_path(index, allow_parent_paths~) {
     Ok(path) => path
     Err(error) => return Err(error)
   }

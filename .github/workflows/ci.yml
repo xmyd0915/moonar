@@ -35,6 +35,8 @@ jobs:
         run: moon test --target all --deny-warn
       - name: Build CLI
         run: moon build --target native --deny-warn
+      - name: Build Node CLI
+        run: moon build cmd/main --target js --deny-warn
       - name: Check generated interfaces
         shell: bash
         run: |
@@ -45,6 +47,8 @@ jobs:
           python-version: '3.12'
       - name: Verify the three examples
         run: python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe
+      - name: Verify native and Node filesystem workflows
+        run: python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe --node-entry _build/js/debug/build/cmd/main/main.js
       - name: Run public API consumer
         run: moon run examples/read_deb --target native
       - name: Check example Debian package with dpkg
@@ -54,12 +58,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes binutils llvm gcc
+          sudo apt-get install --yes binutils llvm clang gcc
       - name: Compare with GNU and LLVM
         if: runner.os == 'Linux'
         run: python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
       - name: Verify creation, editing and thin member workflows
         if: runner.os == 'Linux'
         run: python tools/verify_workflow.py --workflow _build/native/debug/build/examples/archive_workflow/archive_workflow.exe --require-llvm
+      - name: Verify complete CLI archive editing and real linking
+        if: runner.os == 'Linux'
+        run: python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+      - name: Verify real zlib regular and thin consumers
+        if: runner.os == 'Linux'
+        run: python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe --cc gcc
       - name: Check publish package
         run: moon package --list
+      - name: Verify packaged public API consumers
+        run: python tools/verify_package.py

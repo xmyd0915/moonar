@@ -159,16 +159,45 @@ test "writer edits target exact ordinary-member positions and are atomic" {
 }
 
 ///|
-test "writer rejects reserved empty and NUL member names" {
+test "writer rejects empty and NUL member names" {
   let empty = ArchiveBuilder::new()
-  for
-    name in [
-      b"", b"/", b"//", b"/SYM64/", b"__.SYMDEF", b"__.SYMDEF SORTED", b"__.SYMDEF_64",
-      b"__.SYMDEF_64 SORTED", b"a\x00b",
-    ] {
+  for name in [b"", b"a\x00b"] {
     assert_eq(writer_code(empty.append(WriteMember::new(name, b""))), "WR001")
   }
   assert_eq(empty.member_count(), 0)
+}
+
+///|
+test "writer GNU preserves reserved names through ordinary table references" {
+  let entries = [
+    b"/", b"//", b"/SYM64/", b"__.SYMDEF", b"__.SYMDEF SORTED", b"__.SYMDEF_64",
+    b"__.SYMDEF_64 SORTED",
+  ].map(fn(name) { WriteMember::new(name, b"ordinary content") })
+  let builder = writer_plan(entries)
+  for format in [Gnu, Gnu64] {
+    let archive = parsed(writer_ok(builder.write(format~)))
+    assert_eq(archive.symbol_indexes(), [])
+    assert_eq(archive.member_count(), 8)
+    for index = 1; index < 8; index = index + 1 {
+      assert_eq(archive.get_member(index).unwrap().kind, Regular)
+    }
+    assert_eq(writer_ok(archive.edit()).members(), entries)
+    let indexed = parsed(
+      writer_ok(
+        builder.write(
+          format~,
+          symbols=Some([{ name: b"entry", member_index: 3, }]),
+        ),
+      ),
+    )
+    assert_eq(indexed.symbol_indexes()[0].symbols[0].member_index, 5)
+    assert_eq(indexed.get_member(5).unwrap().name, b"__.SYMDEF")
+  }
+  for format in [Bsd, Bsd64, Darwin, Darwin64] {
+    for entry in entries {
+      assert_eq(writer_code(writer_plan([entry]).write(format~)), "WR001")
+    }
+  }
 }
 
 ///|
@@ -365,8 +394,8 @@ test "writer symbol names targets format and resource limits are checked" {
     "WR003",
   )
   assert_eq(
-    writer_code(builder.write(format=Bsd, symbols=Some(symbols))),
-    "WR005",
+    parsed(writer_ok(builder.write(format=Bsd, symbols=Some(symbols)))).symbol_indexes()[0].symbols[0].name,
+    b"x\xff",
   )
 }
 
@@ -399,4 +428,249 @@ test "writer empty index preserves presence with no members or symbols" {
   let archive = parsed(bytes)
   assert_eq(archive.symbol_indexes()[0].symbols, [])
   assert_eq(writer_code(archive.edit()), "WR004")
+}
+
+///|
+test "writer insertion targets gaps without changing the original plan" {
+  let original = writer_plan([
+    WriteMember::new(b"same", b"first"),
+    WriteMember::new(b"same", b"last"),
+  ])
+  let inserted = writer_ok(
+    original.insert(1, WriteMember::new(b"same", b"middle")),
+  )
+  let inserted = writer_ok(inserted.insert(0, WriteMember::new(b"head", b"0")))
+  let inserted = writer_ok(inserted.insert(4, WriteMember::new(b"tail", b"4")))
+  assert_eq(inserted.members().map(fn(entry) { entry.data }), [
+    b"0", b"first", b"middle", b"last", b"4",
+  ])
+  assert_eq(original.member_count(), 2)
+  for index in [-1, 3, 2147483647] {
+    assert_eq(
+      writer_code(original.insert(index, WriteMember::new(b"a", b""))),
+      "WR001",
+    )
+  }
+  assert_eq(
+    writer_code(original.insert(1, WriteMember::new(b"\x00", b""))),
+    "WR001",
+  )
+  assert_eq(
+    writer_ok(ArchiveBuilder::new().insert(0, WriteMember::new(b"x", b""))).member_count(),
+    1,
+  )
+}
+
+///|
+test "writer all symbol layouts retain names target order and byte order" {
+  let builder = writer_plan([
+    WriteMember::new(b"long_first_object_name.o", b"12345678"),
+    WriteMember::new(b"same.o", b"abcdefg\n"),
+    WriteMember::new(b"same.o", b""),
+  ])
+  let symbols : Array[WriteSymbol] = [
+    { name: b"z", member_index: 1, },
+    { name: b"entry", member_index: 0, },
+    { name: b"z", member_index: 2, },
+  ]
+  for
+    (format, bits, bsd) in [
+      (Gnu, "32", false),
+      (Gnu64, "64", false),
+      (Bsd, "32", true),
+      (Bsd64, "64", true),
+      (Darwin, "32", true),
+      (Darwin64, "64", true),
+    ] {
+    for little in [true, false] {
+      let bytes = writer_ok(
+        builder.write(
+          format~,
+          symbols=Some(symbols),
+          index_little_endian=little,
+        ),
+      )
+      let archive = parsed(bytes)
+      let index = archive.symbol_indexes()[0]
+      assert_eq(
+        index.format,
+        if bsd {
+          "bsd\{bits}-\{if little { "le" } else { "be" }}"
+        } else {
+          "gnu\{bits}"
+        },
+      )
+      assert_eq(index.symbols.map(fn(symbol) { symbol.name }), [
+        b"z", b"entry", b"z",
+      ])
+      assert_eq(
+        index.symbols.map(fn(symbol) {
+          archive.member_bytes(symbol.member_index).unwrap()
+        }),
+        [b"abcdefg\n", b"12345678", b""],
+      )
+      let imported = writer_ok(archive.edit(drop_symbol_indexes=true))
+      assert_eq(imported.members().map(fn(entry) { entry.name }), [
+        b"long_first_object_name.o", b"same.o", b"same.o",
+      ])
+      if !bsd {
+        assert_eq(
+          bytes,
+          writer_ok(
+            builder.write(
+              format~,
+              symbols=Some(symbols),
+              index_little_endian=!little,
+            ),
+          ),
+        )
+      }
+    }
+  }
+}
+
+///|
+test "writer GNU64 emits 64 bit counts and full absolute header offsets" {
+  let builder = writer_plan([WriteMember::new(b"a.o", b"xyz")])
+  let bytes = writer_ok(
+    builder.write(
+      format=Gnu64,
+      symbols=Some([{ name: b"f", member_index: 0, }]),
+    ),
+  )
+  assert_eq(bytes[8:24].to_owned(), b"/SYM64/         ")
+  // The index is 8-byte count, 8-byte target, then "f\0".
+  // 8 + 60 + 18 = 86: the absolute ordinary header offset.
+  assert_eq(
+    bytes[68:86].to_owned(),
+    b"\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x56f\x00",
+  )
+  assert_eq(parsed(bytes).get_member(1).unwrap().header_offset, 86)
+}
+
+///|
+test "writer BSD ranlib field sizes and string offsets match the wire format" {
+  let builder = writer_plan([WriteMember::new(b"a.o", b"xyz\n\n")])
+  let symbols : Array[WriteSymbol] = [
+    { name: b"f", member_index: 0, },
+    { name: b"long", member_index: 0, },
+  ]
+  let bytes = writer_ok(builder.write(format=Bsd, symbols=Some(symbols)))
+  assert_eq(bytes[8:24].to_owned(), b"#1/12           ")
+  assert_eq(bytes[68:80].to_owned(), b"__.SYMDEF\x00\x00\x00")
+  // Two ranlib32 entries occupy 16 bytes. The string table is 7 bytes.
+  // A zero byte pads the index to 32 bytes; the first member header is 112.
+  assert_eq(
+    bytes[80:112].to_owned(),
+    b"\x10\x00\x00\x00\x00\x00\x00\x00\x70\x00\x00\x00\x02\x00\x00\x00\x70\x00\x00\x00\x07\x00\x00\x00f\x00long\x00\x00",
+  )
+  let archive = parsed(bytes)
+  assert_eq(archive.get_member(1).unwrap().header_offset, 112)
+  assert_eq(archive.get_member(1).unwrap().data_offset, 176)
+  assert_eq(archive.member_bytes(1), Some(b"xyz\n\n"))
+  for format in [Bsd, Bsd64] {
+    for little in [true, false] {
+      let archive = parsed(
+        writer_ok(
+          builder.write(
+            format~,
+            symbols=Some(symbols),
+            index_little_endian=little,
+          ),
+        ),
+      )
+      assert_eq(archive.member_bytes(1), Some(b"xyz\n\n"))
+      assert_eq(archive.get_member(1).unwrap().data_offset % 8, 0)
+    }
+  }
+}
+
+///|
+test "writer Darwin aligns declared data and retains original trailing newlines" {
+  let entries = [
+    WriteMember::new(b"same.o", b"x\n\n"),
+    WriteMember::new(b"same.o", b"1234567\n"),
+    WriteMember::new(b"last_long_member.o", b""),
+  ]
+  let builder = writer_plan(entries)
+  for format in [Darwin, Darwin64] {
+    let bytes = writer_ok(builder.write(format~))
+    let archive = parsed(bytes)
+    assert_eq(archive.symbol_indexes().length(), 1)
+    assert_eq(archive.symbol_indexes()[0].symbols, [])
+    assert_eq(archive.member_count(), 4)
+    assert_eq(archive.member_bytes(1), Some(b"x\n\n\n\n\n\n\n"))
+    assert_eq(archive.member_bytes(2), Some(b"1234567\n"))
+    assert_eq(archive.member_bytes(3), Some(b""))
+    assert_eq(archive.get_member(1).unwrap().metadata.timestamp, Some(0L))
+    assert_eq(archive.get_member(2).unwrap().metadata.timestamp, Some(1L))
+    for index = 0; index < archive.member_count(); index = index + 1 {
+      let entry = archive.get_member(index).unwrap()
+      assert_eq(entry.data_offset % 8, 0)
+      assert_eq(entry.size % 8, 0)
+    }
+    let imported = writer_ok(archive.edit(drop_symbol_indexes=true))
+    assert_eq(writer_ok(imported.write(format~)), bytes)
+    let preserved = parsed(writer_ok(builder.write(format~, metadata=Preserve)))
+    assert_eq(preserved.get_member(2).unwrap().metadata.timestamp, Some(0L))
+  }
+}
+
+///|
+test "writer indexed layouts enforce exact physical record name and byte budgets" {
+  let builder = writer_plan([
+    WriteMember::new(b"long_object_member.o", b"odd\n"),
+    WriteMember::new(b"b", b""),
+  ])
+  let symbols : Array[WriteSymbol] = [
+    { name: b"entry", member_index: 0, },
+    { name: b"last", member_index: 1, },
+  ]
+  for format in [Gnu, Gnu64, Bsd, Bsd64, Darwin, Darwin64] {
+    let bytes = writer_ok(builder.write(format~, symbols=Some(symbols)))
+    let archive = parsed(bytes)
+    let names = archive.records.fold(init=0, fn(total, entry) {
+      total + entry.name.length()
+    })
+    assert_eq(
+      writer_ok(
+        builder.write(
+          format~,
+          symbols=Some(symbols),
+          max_bytes=bytes.length(),
+          max_members=archive.member_count(),
+          max_name_bytes=names,
+          max_symbols=2,
+          max_symbol_name_bytes=9,
+        ),
+      ),
+      bytes,
+    )
+    assert_eq(
+      writer_code(
+        builder.write(
+          format~,
+          symbols=Some(symbols),
+          max_bytes=bytes.length() - 1,
+        ),
+      ),
+      "WR003",
+    )
+    assert_eq(
+      writer_code(
+        builder.write(
+          format~,
+          symbols=Some(symbols),
+          max_members=archive.member_count() - 1,
+        ),
+      ),
+      "WR003",
+    )
+    assert_eq(
+      writer_code(
+        builder.write(format~, symbols=Some(symbols), max_name_bytes=names - 1),
+      ),
+      "WR003",
+    )
+  }
 }

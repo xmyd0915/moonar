@@ -1,7 +1,8 @@
 ///|
 fn main {
   let arguments = @env.args()
-  let request = match @cli.parse_args(arguments[1:].to_owned()) {
+  let request = match
+    @cli.parse_args(arguments[cli_argument_start():].to_owned()) {
     Ok(request) => request
     Err(message) => {
       eprintln(message)
@@ -9,11 +10,17 @@ fn main {
       return
     }
   }
-  let result = @cli.run(request, fn(path) {
-    Ok(@fs.read_file_to_bytes(path)) catch {
-      @fs.IOError(message) => Err(message)
-    }
-  })
+  let result = @cli.run(
+    request,
+    fn(path) {
+      Ok(@fs.read_file_to_bytes(path)) catch {
+        @fs.IOError(message) => Err(message)
+      }
+    },
+    write=atomic_write,
+    validate_path=check_member_path,
+    canonical=canonical_path,
+  )
   if !result.stdout.is_empty() {
     println(result.stdout[:result.stdout.length() - 1].to_owned())
   }

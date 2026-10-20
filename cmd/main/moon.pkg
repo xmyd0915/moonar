@@ -1,8 +1,18 @@
 import {
   "xmyd0915/moonar/cli",
   "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/x/fs",
   "moonbitlang/x/sys",
 }
 
 pkgtype(kind: "executable")
+
+options(
+  "native-stub": [ "io_native.c" ],
+  targets: {
+    "io_native.mbt": [ "native", "llvm" ],
+    "io_js.mbt": [ "js" ],
+    "io_other.mbt": [ "wasm", "wasm-gc" ],
+  },
+)

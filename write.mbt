@@ -1,12 +1,17 @@
 ///|
-/// Member-name encoding used when creating a regular archive.
+/// Archive layout and symbol-index width used when creating a regular archive.
 pub(all) enum WriteFormat {
   Gnu
+  Gnu64
   Bsd
+  Bsd64
+  Darwin
+  Darwin64
 } derive(Eq, Debug)
 
 ///|
-/// Deterministic writes use time/uid/gid zero and mode 0644.
+/// Deterministic writes use time/uid/gid zero and mode 0644. Darwin assigns
+/// increasing timestamps to repeated names, starting at zero for each name.
 /// Preserve writes the supplied metadata, including blank fields represented by None.
 pub(all) enum WriteMetadata {
   Deterministic
@@ -110,8 +115,8 @@ fn write_member_valid(
   entry : WriteMember,
   index : Int,
 ) -> Unit raise InvalidWrite {
-  if entry.name.is_empty() || member_kind(entry.name) != Regular {
-    write_reject("WR001", Some(index), "empty or reserved ordinary-entry name")
+  if entry.name.is_empty() {
+    write_reject("WR001", Some(index), "empty ordinary-entry name")
   }
   for byte in entry.name {
     if byte == b'\x00' {
@@ -144,6 +149,30 @@ pub fn ArchiveBuilder::append(
     write_member_valid(entry, self.members.length())
     let members = self.members.copy()
     members.push(entry)
+    Ok({ members, })
+  } catch {
+    InvalidWrite(error) => Err(error)
+  }
+}
+
+///|
+/// Insert before a zero-based position. The final position appends an entry.
+pub fn ArchiveBuilder::insert(
+  self : ArchiveBuilder,
+  index : Int,
+  entry : WriteMember,
+) -> Result[ArchiveBuilder, WriteError] {
+  try {
+    if index < 0 || index > self.members.length() {
+      write_reject(
+        "WR001",
+        Some(index),
+        "insert position is outside the archive",
+      )
+    }
+    write_member_valid(entry, index)
+    let members = self.members.copy()
+    members.insert(index, entry)
     Ok({ members, })
   } catch {
     InvalidWrite(error) => Err(error)
@@ -274,7 +303,7 @@ fn write_record_end(
 ///|
 fn write_gnu_short_name(name : Bytes) -> Bool {
   // "#1/" is the BSD embedded-name marker, even inside a GNU archive.
-  if name.length() > 15 || name == b"#1" {
+  if name.length() > 15 || name == b"#1" || member_kind(name) != Regular {
     return false
   }
   for byte in name {
@@ -331,17 +360,68 @@ fn write_padding(output : @buffer.Buffer, size : Int) -> Unit {
 }
 
 ///|
+fn write_bsd_format(format : WriteFormat) -> Bool {
+  match format {
+    Gnu | Gnu64 => false
+    Bsd | Bsd64 | Darwin | Darwin64 => true
+  }
+}
+
+///|
+fn write_darwin_format(format : WriteFormat) -> Bool {
+  format == Darwin || format == Darwin64
+}
+
+///|
+fn write_index_width(format : WriteFormat) -> Int {
+  match format {
+    Gnu | Bsd | Darwin => 4
+    Gnu64 | Bsd64 | Darwin64 => 8
+  }
+}
+
+///|
+fn write_index_number(
+  output : @buffer.Buffer,
+  value : Int,
+  width : Int,
+  little : Bool,
+) -> Unit {
+  if width == 8 {
+    if little {
+      output.write_int64_le(value.to_int64())
+    } else {
+      output.write_int64_be(value.to_int64())
+    }
+  } else if little {
+    output.write_int_le(value)
+  } else {
+    output.write_int_be(value)
+  }
+}
+
+///|
+// Avoid adding an untrusted name length to the absolute archive offset.
+fn write_name_padding(offset : Int, name_size : Int) -> Int {
+  (8 - (offset % 8 + 4 + name_size % 8) % 8) % 8
+}
+
+///|
 /// Write a regular archive after validating its complete layout and budgets.
 /// GNU uses a deduplicated long-name table; BSD uses embedded names.
-/// `symbols=None` omits the index; `Some([])` writes an empty GNU32 index.
-/// GNU32 mappings refer to final ordinary-entry positions and preserve order.
-/// Symbol extraction from object files and BSD index writing are not performed.
+/// Symbol mappings refer to final ordinary-entry positions and retain their order.
+/// `symbols=None` omits the index, except Darwin always emits at least an empty
+/// index. BSD/Darwin indexes use the requested byte order; GNU is always big endian.
+/// Darwin aligns object data to eight bytes and includes trailing newline padding
+/// in the declared payload. Readers retain those bytes. Other formats preserve
+/// exact payload bytes. Deterministic Darwin timestamps distinguish repeated names.
 /// Limits count physical records, expanded names and final serialized bytes.
 pub fn ArchiveBuilder::write(
   self : ArchiveBuilder,
   format? : WriteFormat = Gnu,
   metadata? : WriteMetadata = Deterministic,
   symbols? : Array[WriteSymbol]? = None,
+  index_little_endian? : Bool = true,
   max_bytes? : Int = 67108864,
   max_members? : Int = 100000,
   max_name_bytes? : Int = 67108864,
@@ -349,6 +429,10 @@ pub fn ArchiveBuilder::write(
   max_symbol_name_bytes? : Int = 67108864,
 ) -> Result[Bytes, WriteError] {
   try {
+    let bsd = write_bsd_format(format)
+    let darwin = write_darwin_format(format)
+    let width = write_index_width(format)
+    let symbols = if darwin && symbols is None { Some([]) } else { symbols }
     if max_bytes < 0 ||
       max_members < 0 ||
       max_name_bytes < 0 ||
@@ -363,9 +447,15 @@ pub fn ArchiveBuilder::write(
     let mut table_size = 0
     let name_offsets : Map[Bytes, Int] = Map([])
     let table_names : Array[Bytes] = []
-    let sizes : Array[Int] = []
     for index, entry in self.members {
       write_member_valid(entry, index)
+      if bsd && member_kind(entry.name) != Regular {
+        write_reject(
+          "WR001",
+          Some(index),
+          "BSD embedded names reserve symbol and name table spellings",
+        )
+      }
       total_names = write_add(
         total_names,
         entry.name.length(),
@@ -373,61 +463,69 @@ pub fn ArchiveBuilder::write(
         Some(index),
         "expanded entry-name byte limit exceeded",
       )
-      let mut size = entry.data.length()
-      if size > max_bytes {
+      if entry.data.length() > max_bytes {
         write_reject("WR003", Some(index), "archive byte limit exceeded")
       }
-      match format {
-        Gnu => {
-          if entry.name.find(b"\n"[:]) is Some(_) {
-            write_reject(
-              "WR001",
-              Some(index),
-              "GNU member name contains a newline",
-            )
-          }
-          if !write_gnu_short_name(entry.name) &&
-            name_offsets.get(entry.name) is None {
-            name_offsets[entry.name] = table_size
-            table_names.push(entry.name)
-            table_size = write_add(
-              table_size,
-              entry.name.length(),
-              max_bytes,
-              Some(index),
-              "archive byte limit exceeded",
-            )
-            table_size = write_add(
-              table_size,
-              2,
-              max_bytes,
-              Some(index),
-              "archive byte limit exceeded",
-            )
-          }
+      if !bsd {
+        if entry.name.find(b"\n"[:]) is Some(_) {
+          write_reject(
+            "WR001",
+            Some(index),
+            "GNU member name contains a newline",
+          )
         }
-        Bsd =>
-          size = write_add(
-            size,
+        if !write_gnu_short_name(entry.name) &&
+          name_offsets.get(entry.name) is None {
+          name_offsets[entry.name] = table_size
+          table_names.push(entry.name)
+          table_size = write_add(
+            table_size,
             entry.name.length(),
             max_bytes,
             Some(index),
             "archive byte limit exceeded",
           )
+          table_size = write_add(
+            table_size,
+            2,
+            max_bytes,
+            Some(index),
+            "archive byte limit exceeded",
+          )
+        }
       }
-      sizes.push(size)
     }
     let mut index_size = 0
-    if symbols is Some(symbols) {
-      if format != Gnu {
-        write_reject("WR005", None, "symbol-index writing requires GNU format")
+    let mut index_padding = 0
+    let mut symbol_string_size = 0
+    let symbol_offsets : Array[Int] = []
+    let index_name = if bsd {
+      if width == 8 {
+        b"__.SYMDEF_64"
+      } else {
+        b"__.SYMDEF"
       }
+    } else if width == 8 {
+      b"/SYM64/"
+    } else {
+      b"/"
+    }
+    let index_name_size = if bsd {
+      index_name.length() + write_name_padding(8, index_name.length())
+    } else {
+      0
+    }
+    if symbols is Some(symbols) {
       if symbols.length() > max_symbols {
         write_reject("WR003", None, "symbol count limit exceeded")
       }
       index_size = write_add(
         0,
-        4,
+        if bsd {
+          width * 2
+        } else {
+          width
+        },
         max_bytes,
         None,
         "archive byte limit exceeded",
@@ -465,9 +563,28 @@ pub fn ArchiveBuilder::write(
           Some(symbol.member_index),
           "symbol-name byte limit exceeded",
         )
+        symbol_offsets.push(symbol_string_size)
+        symbol_string_size = write_add(
+          symbol_string_size,
+          symbol.name.length(),
+          max_bytes,
+          None,
+          "archive byte limit exceeded",
+        )
+        symbol_string_size = write_add(
+          symbol_string_size,
+          1,
+          max_bytes,
+          None,
+          "archive byte limit exceeded",
+        )
         index_size = write_add(
           index_size,
-          5,
+          if bsd {
+            width * 2 + 1
+          } else {
+            width + 1
+          },
           max_bytes,
           None,
           "archive byte limit exceeded",
@@ -475,6 +592,16 @@ pub fn ArchiveBuilder::write(
         index_size = write_add(
           index_size,
           symbol.name.length(),
+          max_bytes,
+          None,
+          "archive byte limit exceeded",
+        )
+      }
+      if bsd {
+        index_padding = (8 - index_size % 8) % 8
+        index_size = write_add(
+          index_size,
+          index_padding,
           max_bytes,
           None,
           "archive byte limit exceeded",
@@ -499,12 +626,19 @@ pub fn ArchiveBuilder::write(
       )
       total_names = write_add(
         total_names,
-        1,
+        index_name.length(),
         max_name_bytes,
         None,
         "expanded entry-name byte limit exceeded",
       )
-      offset = write_record_end(offset, index_size, max_bytes, None)
+      let stored_size = write_add(
+        index_size,
+        index_name_size,
+        max_bytes,
+        None,
+        "archive byte limit exceeded",
+      )
+      offset = write_record_end(offset, stored_size, max_bytes, None)
     }
     if table_size > 0 {
       count = write_add(
@@ -526,8 +660,48 @@ pub fn ArchiveBuilder::write(
     ignore(count)
     ignore(total_names)
     let headers : Array[Int] = []
-    for index, size in sizes {
+    let sizes : Array[Int] = []
+    let name_sizes : Array[Int] = []
+    let payload_paddings : Array[Int] = []
+    for index, entry in self.members {
       headers.push(offset)
+      let name_size = if bsd {
+        write_add(
+          entry.name.length(),
+          if darwin || symbols is Some(_) {
+            write_name_padding(offset, entry.name.length())
+          } else {
+            0
+          },
+          max_bytes,
+          Some(index),
+          "archive byte limit exceeded",
+        )
+      } else {
+        0
+      }
+      let payload_padding = if darwin {
+        (8 - entry.data.length() % 8) % 8
+      } else {
+        0
+      }
+      let size = write_add(
+        entry.data.length(),
+        name_size,
+        max_bytes,
+        Some(index),
+        "archive byte limit exceeded",
+      )
+      let size = write_add(
+        size,
+        payload_padding,
+        max_bytes,
+        Some(index),
+        "archive byte limit exceeded",
+      )
+      sizes.push(size)
+      name_sizes.push(name_size)
+      payload_paddings.push(payload_padding)
       offset = write_record_end(offset, size, max_bytes, Some(index))
     }
     // Allocation happens only after every field, reference and output size passes.
@@ -540,16 +714,48 @@ pub fn ArchiveBuilder::write(
       mode: None,
     }
     if symbols is Some(symbols) {
-      write_header(output, b"/", special_metadata, index_size)
-      output.write_int_be(symbols.length())
-      for symbol in symbols {
-        output.write_int_be(headers[symbol.member_index])
+      if bsd {
+        write_header(
+          output,
+          @utf8.encode("#1/\{index_name_size}"),
+          special_metadata,
+          index_name_size + index_size,
+        )
+        output.write_bytes(index_name[:])
+        for i = index_name.length(); i < index_name_size; i = i + 1 {
+          output.write_byte(b'\x00')
+        }
+      } else {
+        write_header(output, index_name, special_metadata, index_size)
+      }
+      let little = bsd && index_little_endian
+      write_index_number(
+        output,
+        if bsd {
+          symbols.length() * width * 2
+        } else {
+          symbols.length()
+        },
+        width,
+        little,
+      )
+      for i, symbol in symbols {
+        if bsd {
+          write_index_number(output, symbol_offsets[i], width, little)
+        }
+        write_index_number(output, headers[symbol.member_index], width, little)
+      }
+      if bsd {
+        write_index_number(output, symbol_string_size, width, little)
       }
       for symbol in symbols {
         output.write_bytes(symbol.name[:])
         output.write_byte(b'\x00')
       }
-      write_padding(output, index_size)
+      for i = 0; i < index_padding; i = i + 1 {
+        output.write_byte(b'\x00')
+      }
+      write_padding(output, index_name_size + index_size)
     }
     if table_size > 0 {
       write_header(output, b"//", special_metadata, table_size)
@@ -565,29 +771,38 @@ pub fn ArchiveBuilder::write(
       gid: Some(0L),
       mode: Some(420L),
     }
+    let timestamps : Map[Bytes, Int64] = Map([])
     for index, entry in self.members {
-      let header_name = match format {
-        Gnu =>
-          match name_offsets.get(entry.name) {
-            Some(reference) => @utf8.encode("/\{reference}")
-            None => entry.name + b"/"
-          }
-        Bsd => @utf8.encode("#1/\{entry.name.length()}")
+      let header_name = if !bsd {
+        match name_offsets.get(entry.name) {
+          Some(reference) => @utf8.encode("/\{reference}")
+          None => entry.name + b"/"
+        }
+      } else {
+        @utf8.encode("#1/\{name_sizes[index]}")
       }
-      write_header(
-        output,
-        header_name,
-        if metadata == Deterministic {
-          deterministic
+      let entry_metadata = if metadata == Deterministic {
+        if darwin {
+          let timestamp = timestamps.get(entry.name).unwrap_or(0L)
+          timestamps[entry.name] = timestamp + 1L
+          { ..deterministic, timestamp: Some(timestamp), }
         } else {
-          entry.metadata
-        },
-        sizes[index],
-      )
-      if format == Bsd {
+          deterministic
+        }
+      } else {
+        entry.metadata
+      }
+      write_header(output, header_name, entry_metadata, sizes[index])
+      if bsd {
         output.write_bytes(entry.name[:])
+        for i = entry.name.length(); i < name_sizes[index]; i = i + 1 {
+          output.write_byte(b'\x00')
+        }
       }
       output.write_bytes(entry.data[:])
+      for i = 0; i < payload_paddings[index]; i = i + 1 {
+        output.write_byte(b'\n')
+      }
       write_padding(output, sizes[index])
     }
     Ok(output.to_bytes())
