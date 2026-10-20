@@ -40,6 +40,7 @@ GNU/LLVM 对照需要额外安装 GNU ar/nm、LLVM ar 和 gcc/cc：
 
 ```sh
 python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+python tools/verify_workflow.py --workflow _build/native/debug/build/examples/archive_workflow/archive_workflow.exe --require-llvm
 ```
 
 脚本生成自己的输入，比较成员列表、提取字节和原始对象符号，并依次输出：
@@ -51,6 +52,8 @@ python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main
 
 旧版 GNU nm 不展示 BSD armap 时，以原始对象的已定义外部符号及其输入成员作为参照。
 64 位测试使用 LLVM 的 `SYM64_THRESHOLD` 小文件测试开关。
+读写工作流另验证 MoonAr 输出被 GNU/LLVM 列举和提取、确定性字节与精确重名编辑、
+GNU/LLVM thin 的加载及物化，并用真实 C 对象检查写出的 GNU32 索引和链接运行结果。
 可在 [CI 工作流](../.github/workflows/ci.yml) 查看完整环境与步骤，在
 [Actions](https://github.com/xmyd0915/moonar/actions) 查看对应提交的 Linux、Windows 结果。
 
@@ -71,3 +74,5 @@ python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main
 
 JSON 字段与错误代码见 [API 说明](API.md)，格式与依赖来源见 [ORIGINS.md](../ORIGINS.md)。
 多方言兼容和归档比较的职责及案例见 [比较说明](COMPARISON.md)。
+创建与编辑的契约见 [读写 API](WRITING.md)，完整通用库的目标、阶段和验收见
+[交付计划](ROADMAP.md)。

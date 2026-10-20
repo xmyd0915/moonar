@@ -5,6 +5,10 @@ abstract type: only successful parsing constructs one, and callers cannot access
 its internal record array. Offsets are zero-based byte positions in the original
 input. A member index refers to physical archive order, including special records.
 
+Creation, editing and the separate `ThinArchive` API are documented in
+[Writing and thin members](WRITING.md). Editor positions count ordinary members
+only; parsed archive and symbol-index positions count physical records.
+
 ## JSON version 1
 
 All JSON results contain `schema_version: 1`. Field ordering is not contractual.
@@ -71,13 +75,13 @@ analyzes object-code equivalence.
 
 | Code | Meaning |
 | --- | --- |
-| AR001 | Missing or invalid ordinary archive signature |
+| AR001 | Missing or invalid archive signature for the selected parser |
 | AR002 | Truncated header or payload |
 | AR003 | Invalid header trailer or alignment byte |
 | AR004 | Invalid or missing numeric field |
 | AR005 | Number exceeds the supported range |
 | AR006 | Invalid name, embedded name length or GNU table reference |
-| AR007 | Thin archive; external files are not loaded |
+| AR007 | Thin input passed to `parse`; use `parse_thin` |
 | AR008 | Invalid or exceeded resource limit |
 | AR009 | Invalid symbol index, string or member reference |
 | AR010 | Ambiguous byte order or unsupported multiple-index layout |

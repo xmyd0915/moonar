@@ -16,24 +16,28 @@ fn gnu_names(
       break
     }
     let mut stop = cursor
-    while stop + 1 < end && !(data[stop] == b'/' && data[stop + 1] == b'\n') {
+    while stop < end && data[stop] != b'\n' {
       stop += 1
     }
-    if stop + 1 >= end {
+    if stop == end {
       reject("AR006", cursor, "unterminated GNU long name")
     }
-    if stop == cursor {
+    if stop == cursor || data[stop - 1] != b'/' {
+      reject("AR006", stop, "GNU long-name newline must follow a slash")
+    }
+    let name_end = stop - 1
+    if name_end == cursor {
       reject("AR006", cursor, "empty GNU long name")
     }
-    for i = cursor; i < stop; i = i + 1 {
+    for i = cursor; i < name_end; i = i + 1 {
       if data[i] == b'\x00' {
         reject("AR006", i, "NUL inside GNU long name")
       }
     }
     if wanted.get(cursor - start) is Some(_) {
-      names[cursor - start] = data[cursor:stop].to_owned()
+      names[cursor - start] = data[cursor:name_end].to_owned()
     }
-    cursor = stop + 2
+    cursor = stop + 1
   }
   names
 }

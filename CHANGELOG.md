@@ -1,5 +1,18 @@
 # Changes
 
+## Main branch — 2026-10-20
+
+- Add a separate GNU thin archive API with GNU32/64 symbol references,
+  caller-controlled member loading, relative-path policy and byte limits.
+- Create deterministic GNU/BSD archives and edit individual duplicate members
+  through immutable append, replace, remove and move operations.
+- Require an explicit decision when importing indexed archives for editing;
+  write fresh GNU32 indexes from caller-provided final member mappings.
+- Add a public workflow example and GNU/LLVM creation, editing, thin
+  materialization and real-object linking checks.
+- Define the general Unix ar library scope, delivery stages and acceptance
+  criteria, including thin creation, file operations and automatic indexes.
+
 ## 0.2.0 — 2026-10-16
 
 - Validate GNU 32/64-bit and BSD/Darwin 32/64-bit symbol indexes, resolve targets

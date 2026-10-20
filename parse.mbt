@@ -57,7 +57,7 @@ fn parse_records(
   max_name_bytes : Int,
 ) -> Archive raise InvalidArchive {
   if data.length() >= 8 && data[:8] == b"!<thin>\n"[:] {
-    reject("AR007", 0, "thin archives are not supported")
+    reject("AR007", 0, "use parse_thin for thin archives")
   }
   if data.length() < 8 || data[:8] != b"!<arch>\n"[:] {
     reject("AR001", 0, "expected ar archive magic")

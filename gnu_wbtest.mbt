@@ -51,6 +51,21 @@ test "GNU malformed and duplicate name tables fail explicitly" {
 }
 
 ///|
+test "GNU names end at the first newline and require its slash terminator" {
+  for names in [b"line\nbreak.o/\n", b"a/\nline\nbreak.o/\n"] {
+    assert_eq(error_code(b"!<arch>\n" + record("//", names)), "AR006")
+    assert_true(
+      parse_thin(b"!<thin>\n" + record("//", names))
+      is Err({ code: "AR006", .. }),
+    )
+  }
+  assert_true(
+    parse(b"!<arch>\n" + record("//", b"line\nbreak.o/\n") + record("/0", b"x"))
+    is Err({ code: "AR006", offset: 72, .. }),
+  )
+}
+
+///|
 test "unused GNU names are validated without populating the lookup map" {
   let table = b"ignored/\n".repeat(10000) + b"used/\n"
   let wanted : Map[Int, Unit] = Map([(90000, ())])

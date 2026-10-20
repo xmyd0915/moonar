@@ -2,12 +2,18 @@
 
 [![CI](https://github.com/xmyd0915/moonar/actions/workflows/ci.yml/badge.svg)](https://github.com/xmyd0915/moonar/actions/workflows/ci.yml)
 
-MoonAr 是用 MoonBit 编写的 Unix ar 归档读取、符号索引校验与比较库，附带 `inspect`、`check` 和
-`diff` 命令行工具。它可以读取普通静态库 `.a`，也可以读取 `.deb` 的外层 ar 容器。
+MoonAr 是用 MoonBit 编写的 Unix ar 归档库，提供普通归档读取、GNU thin 成员加载、
+GNU/BSD 归档创建、成员编辑、符号索引校验与比较，附带 `inspect`、`check` 和 `diff`
+命令行工具。它可以处理静态库 `.a`，也可以读取 `.deb` 的外层 ar 容器。
 
-它面向构建工具、制品检查脚本和包分析工具：检查归档结构、定位损坏的位置，或判断
-两次构建的差异来自成员内容、时间戳等元数据，还是成员顺序。解析库直接处理字节数据，
+它面向构建工具、制品处理脚本和包分析工具：创建归档，精确修改重名成员，加载 thin
+外部成员，或排查两次构建的内容、元数据和顺序差异。核心库直接处理字节，
 不启动外部 `ar`，保留重名成员和原始文件名字节，便于其他 MoonBit 程序集成。
+
+项目目标是实现完整的通用 Unix ar 库，覆盖读取、thin 引用处理、创建、编辑、
+格式转换与符号索引维护。[功能范围与交付计划](docs/ROADMAP.md) 定义了完整版本的
+格式范围、阶段目标和验收标准。已发布的 `0.2.0` 提供读取、索引校验与比较；
+以下 thin、创建和编辑接口可在当前主分支源码中使用。
 
 ## 快速开始
 
@@ -102,6 +108,35 @@ diff BEFORE AFTER [--json] [--logical] 比较归档字节、成员或逻辑映�
 JSON 输出包含 `schema_version: 1`。解析和读取错误在 JSON 模式下写到标准输出，
 参数错误写到标准错误。字段定义和错误代码见 [API 说明](docs/API.md)。
 
+## 创建、编辑与 thin 成员
+
+`ArchiveBuilder` 从普通成员序列创建 GNU/BSD 归档。默认使用确定性元数据，
+也可选择保留时间戳、用户/组和模式。`append`、`replace`、`remove`、`move_member`
+返回新的编辑结果，按普通成员的零基序号定位，能够独立修改重名项。
+
+```moonbit
+let builder = @ar.ArchiveBuilder::new()
+let builder = builder.append(@ar.WriteMember::new(b"hello.txt", b"hello\n")).unwrap()
+let output = builder.write(format=@ar.Gnu).unwrap()
+```
+
+带索引的归档导入编辑器时需要显式选择索引策略。最终写出可提供 `WriteSymbol`
+列表生成 GNU32 索引，目标按编辑完成后的普通成员序号指定，偏移由写出器重新计算。
+
+`parse_thin` 返回独立的 `ThinArchive`，区分内嵌名称/符号表和外部成员。
+`load_member` 由调用方提供加载器，并核对路径、预算和声明大小；解析本身不访问磁盘。
+原始路径通过成员记录保留。详情见 [读写与 thin 接口](docs/WRITING.md)。
+
+公共 API 示例创建含二进制、空成员和重名项的 GNU/BSD 归档：
+
+```sh
+moon run examples/archive_workflow --target native -- create output.a gnu
+moon run examples/archive_workflow --target native -- edit output.a edited.a
+```
+
+[完整工作流](examples/archive_workflow/README.md) 还展示 thin 成员加载、物化为普通归档，
+以及从真实对象和显式符号映射生成可链接静态库。
+
 ## 作为库使用
 
 在自己的 MoonBit 项目中添加 [MoonCakes 包](https://mooncakes.io/docs/xmyd0915/moonar)：
@@ -155,8 +190,13 @@ fn inspect_bytes(input : Bytes) -> Unit {
   与 `llvm-ar` 提取出的成员数据一致。Darwin 确定性重名归档可能调整时间戳，这类变化
   在内容匹配后仍作为元数据报告。
 
-当前版本不提供归档写入、目录解压、thin archive 外部文件加载、对象文件或 ABI 分析，
-也不解压 `.deb` 中的 tar 数据。`check` 检查容器与索引结构，不解析对象内部定义，因此
+普通归档写出支持 GNU/BSD；索引写出接受调用者提供的 GNU32 符号映射。
+thin 读取支持直接外部文件引用，嵌套归档偏移引用返回 `AR011`。
+thin 写出、Darwin 专用写出、对象符号自动发现及文件编辑 CLI 按
+[阶段计划](docs/ROADMAP.md) 扩展。现有查询 CLI 接收普通归档；thin 使用公共库接口。
+
+目录解压、对象指令或 ABI 分析、`.deb` 内层 tar 解压不在当前接口内。
+`check` 检查容器与索引结构，不解析对象内部定义，因此
 不证明索引中的符号确由目标对象定义，也不验证链接结果、ABI 或包签名。
 多个符号索引及 COFF 双 linker-member 布局返回 `AR010`。
 
@@ -188,12 +228,17 @@ Python 3.9+ 用于复核示例文件、预期输出及退出码。
 
 ```sh
 python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+python tools/verify_workflow.py --workflow _build/native/debug/build/examples/archive_workflow/archive_workflow.exe --require-llvm
 ```
 
 脚本从本项目的输入生成归档，核对成员列表、提取结果和真实 C 对象的符号映射，覆盖
 损坏索引、重名插入、跨方言逻辑比较和 GNU/Darwin 64 位索引。Linux CI 强制运行 LLVM 对照；
 本地省略 `--require-llvm` 时，
 缺少 LLVM 会明确显示跳过。验证范围与实现细节见 [开发说明](docs/DEVELOPMENT.md)。
+
+`verify_workflow.py` 让 GNU/LLVM 读取 MoonAr 创建和编辑的归档，核对每个重名成员的字节；
+再读取参考工具生成的 thin 归档并物化，最后用 `nm` 检查写出的索引并编译、链接、运行
+真实 C 程序。
 
 解析库只使用 MoonBit core；CLI 和文件读取示例使用 `moonbitlang/x@0.5.5`。
 Python、GNU ar 和 LLVM ar 用于验证，不是解析库的运行依赖。
@@ -203,6 +248,8 @@ Python、GNU ar 和 LLVM ar 用于验证，不是解析库的运行依赖。
 - [三个使用场景](examples/README.md)
 - [复现指南](docs/REVIEW.md)
 - [比较设计与案例](docs/COMPARISON.md)
+- [创建、编辑与 thin API](docs/WRITING.md)
+- [通用库范围、阶段目标与验收](docs/ROADMAP.md)
 - [API、JSON 与错误代码](docs/API.md)
 - [代码结构与验证说明](docs/DEVELOPMENT.md)
 - [来源与实现说明](ORIGINS.md)

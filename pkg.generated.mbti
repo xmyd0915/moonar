@@ -12,17 +12,32 @@ pub fn compare_logical(Archive, Archive) -> LogicalComparison
 
 pub fn parse(Bytes, max_members? : Int, max_bytes? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Archive, ParseError]
 
+pub fn parse_thin(Bytes, max_members? : Int, max_bytes? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[ThinArchive, ParseError]
+
 // Errors
 
 // Types and methods
 type Archive derive(@debug.Debug)
 pub fn Archive::byte_length(Self) -> Int
+pub fn Archive::edit(Self, drop_symbol_indexes? : Bool) -> Result[ArchiveBuilder, WriteError]
 pub fn Archive::get_member(Self, Int) -> Member?
 pub fn Archive::member_bytes(Self, Int) -> Bytes?
 pub fn Archive::member_count(Self) -> Int
 pub fn Archive::symbol_indexes(Self) -> Array[SymbolIndex]
 pub fn Archive::to_json(Self) -> Json
 pub fn Archive::to_repr(Self) -> @debug.Repr
+
+type ArchiveBuilder derive(@debug.Debug)
+pub fn ArchiveBuilder::append(Self, WriteMember) -> Result[Self, WriteError]
+pub fn ArchiveBuilder::from_members(Array[WriteMember]) -> Result[Self, WriteError]
+pub fn ArchiveBuilder::member_count(Self) -> Int
+pub fn ArchiveBuilder::members(Self) -> Array[WriteMember]
+pub fn ArchiveBuilder::move_member(Self, Int, Int) -> Result[Self, WriteError]
+pub fn ArchiveBuilder::new() -> Self
+pub fn ArchiveBuilder::remove(Self, Int) -> Result[Self, WriteError]
+pub fn ArchiveBuilder::replace(Self, Int, WriteMember) -> Result[Self, WriteError]
+pub fn ArchiveBuilder::to_repr(Self) -> @debug.Repr
+pub fn ArchiveBuilder::write(Self, format? : WriteFormat, metadata? : WriteMetadata, symbols? : Array[WriteSymbol]?, max_bytes? : Int, max_members? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Bytes, WriteError]
 
 pub(all) enum ChangeKind {
   Added
@@ -147,6 +162,72 @@ pub(all) struct SymbolIndex {
 pub fn SymbolIndex::equal(Self, Self) -> Bool
 pub fn SymbolIndex::not_equal(Self, Self) -> Bool
 pub fn SymbolIndex::to_repr(Self) -> @debug.Repr
+
+type ThinArchive derive(@debug.Debug)
+pub fn ThinArchive::byte_length(Self) -> Int
+pub fn ThinArchive::get_member(Self, Int) -> ThinMember?
+pub fn ThinArchive::inline_bytes(Self, Int) -> Bytes?
+pub fn ThinArchive::load_member(Self, Int, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int) -> Result[Bytes, ParseError]
+pub fn ThinArchive::member_count(Self) -> Int
+pub fn ThinArchive::member_path(Self, Int) -> Result[Bytes, ParseError]
+pub fn ThinArchive::symbol_indexes(Self) -> Array[SymbolIndex]
+pub fn ThinArchive::to_repr(Self) -> @debug.Repr
+
+pub(all) struct ThinMember {
+  name : Bytes
+  kind : MemberKind
+  header_offset : Int
+  size : Int
+  metadata : Metadata
+} derive(Eq, @debug.Debug)
+pub fn ThinMember::equal(Self, Self) -> Bool
+pub fn ThinMember::name_hex(Self) -> String
+pub fn ThinMember::name_text(Self) -> String
+pub fn ThinMember::not_equal(Self, Self) -> Bool
+pub fn ThinMember::to_repr(Self) -> @debug.Repr
+
+pub(all) struct WriteError {
+  code : String
+  member_index : Int?
+  message : String
+} derive(Eq, @debug.Debug)
+pub fn WriteError::equal(Self, Self) -> Bool
+pub fn WriteError::not_equal(Self, Self) -> Bool
+pub fn WriteError::to_repr(Self) -> @debug.Repr
+
+pub(all) enum WriteFormat {
+  Gnu
+  Bsd
+} derive(Eq, @debug.Debug)
+pub fn WriteFormat::equal(Self, Self) -> Bool
+pub fn WriteFormat::not_equal(Self, Self) -> Bool
+pub fn WriteFormat::to_repr(Self) -> @debug.Repr
+
+pub(all) struct WriteMember {
+  name : Bytes
+  data : Bytes
+  metadata : Metadata
+} derive(Eq, @debug.Debug)
+pub fn WriteMember::equal(Self, Self) -> Bool
+pub fn WriteMember::new(Bytes, Bytes, metadata? : Metadata) -> Self
+pub fn WriteMember::not_equal(Self, Self) -> Bool
+pub fn WriteMember::to_repr(Self) -> @debug.Repr
+
+pub(all) enum WriteMetadata {
+  Deterministic
+  Preserve
+} derive(Eq, @debug.Debug)
+pub fn WriteMetadata::equal(Self, Self) -> Bool
+pub fn WriteMetadata::not_equal(Self, Self) -> Bool
+pub fn WriteMetadata::to_repr(Self) -> @debug.Repr
+
+pub(all) struct WriteSymbol {
+  name : Bytes
+  member_index : Int
+} derive(Eq, @debug.Debug)
+pub fn WriteSymbol::equal(Self, Self) -> Bool
+pub fn WriteSymbol::not_equal(Self, Self) -> Bool
+pub fn WriteSymbol::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

@@ -58,5 +58,8 @@ jobs:
       - name: Compare with GNU and LLVM
         if: runner.os == 'Linux'
         run: python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
+      - name: Verify creation, editing and thin member workflows
+        if: runner.os == 'Linux'
+        run: python tools/verify_workflow.py --workflow _build/native/debug/build/examples/archive_workflow/archive_workflow.exe --require-llvm
       - name: Check publish package
         run: moon package --list

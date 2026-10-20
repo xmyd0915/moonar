@@ -8,11 +8,14 @@
 | `parse.mbt` | 普通 ar 头部、数值字段、边界与资源限制 |
 | `names.mbt` | GNU 名称表和 BSD 内嵌名称 |
 | `symbols.mbt` | GNU/BSD 32/64 位索引、字节序约束、字符串与成员引用校验 |
+| `thin.mbt` | GNU thin 的独立容器、外部成员路径和调用者加载器 |
+| `write.mbt` | 不可变成员编辑计划、GNU/BSD 布局和 GNU32 索引写出 |
 | `compare.mbt` | 内容优先配对、歧义报告、物理与逻辑比较、符号映射和顺序判断 |
 | `json.mbt` | 版本化 JSON 输出与无损名称表示 |
 | `cli/` | 参数解析、命令执行和退出码 |
 | `cmd/main/` | 原生文件读取与命令行入口 |
 | `examples/read_deb/` | 通过公共 API 读取 Debian 包外层的示例 |
+| `examples/archive_workflow/` | 创建、编辑、thin 加载和静态库写出的公共 API 消费者 |
 | `tools/` | 示例生成与 GNU/LLVM 对照验证 |
 
 解析库接收完整的 `Bytes`，不访问文件系统。CLI 通过可注入的读取函数调用解析库，
@@ -66,6 +69,8 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
 - `tools/verify_archives.py` 使用 GNU ar 和 LLVM ar 生成归档，将成员列表、顺序及数据与
   独立工具的列举、提取和 GNU nm 符号结果比较；也覆盖真实 C 对象、损坏索引、
   重名插入、跨格式逻辑比较及 GNU/Darwin 64 位索引。
+- `tools/verify_workflow.py` 验证写出的 GNU/BSD、重名编辑、GNU/LLVM thin 加载与物化，
+  以及 GNU32 映射的 `nm` 结果和真实对象链接运行。
 - Linux 和 Windows CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
   GNU/LLVM 对照，以及 `dpkg-deb --info` 检查 Debian 示例。
 

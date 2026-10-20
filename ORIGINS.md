@@ -12,6 +12,8 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
 - [LLVM 18.1.3 ArchiveWriter.cpp](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/lib/Object/ArchiveWriter.cpp)：
   GNU/BSD 32/64 位索引布局、Darwin 对齐与重名时间戳行为，以及 `SYM64_THRESHOLD`
   小文件验证开关；未复制其实现代码。
+- [LLVM 18.1.3 Archive.cpp](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/lib/Object/Archive.cpp)：
+  GNU 长名称表按首个换行识别结束并检查前置斜杠的互操作约束。
 - [Debian deb(5)](https://manpages.debian.org/bookworm/dpkg-dev/deb.5.en.html)：
   `.deb` 外层 ar 成员与 `debian-binary` 版本标记。
 - [MoonBit 包文档](https://docs.moonbitlang.com/en/latest/language/packages.html)：
