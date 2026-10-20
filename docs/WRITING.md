@@ -75,7 +75,7 @@ BSD 格式同时请求索引会返回 `WR005`。
 | `member_path(index)` | 符合默认策略的相对文件路径 |
 | `load_member(index, loader, max_bytes?)` | 调用加载器后核对返回字节和声明大小 |
 
-`ThinMember.size` 是外部文件的声明大小，普通成员在容器中仅占头部，
+普通成员的 `ThinMember.size` 表示外部文件的声明大小；这类成员在容器中仅占头部，
 奇数外部大小也不产生内嵌对齐字节。名称和符号表则仍存储在归档内。
 GNU `/name-offset:archive-offset` 嵌套归档引用及 BSD 内嵌名称返回 `AR011`。
 
