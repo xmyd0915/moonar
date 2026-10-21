@@ -87,14 +87,33 @@ python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe
 
 共执行五个消费者，每个运行两种压缩级别。此流程不调用外部归档工具，也不手工提供符号表。
 
+## LLVM LTO 实际消费者
+
+```sh
+python tools/verify_lto.py --moonar _build/native/debug/build/cmd/main/main.exe
+```
+
+需要 Clang、LLD 与 LLVM ar，可通过 `--clang`、`--llvm-ar` 指定路径，或用 `--zig PATH`
+选择 Zig 自带工具链。分别处理 full LTO 和 ThinLTO 编译参数生成的对象：
+
+1. 与 LLVM ar 的索引映射对照，包含全局、弱、公共和别名定义，排除局部及未定义项。
+2. 创建、替换、移动、重建索引和提取，链接运行核对修改前后的结果。
+3. 验证 GNU32/64 thin 编辑及物化、嵌套 thin 物化、普通对象与 bitcode 混合归档。
+4. 核对 Mach-O 包装及 Darwin 对齐后的 bitcode 重新索引；只验证映射，不在异平台执行。
+5. 符号预算和损坏输入失败后，原归档字节保持不变。
+
+LLD 不消费 GNU archive-offset 引用，嵌套 thin 先物化。Zig 的 Mach-O 样本用 `-emit-llvm`
+生成包装，原生运行样本使用 LTO 参数。若可找到 GCC，脚本另验证 slim LTO 明确拒绝、
+fat LTO 的原生定义无需插件即可链接运行；可用 `--gcc` 指定工具。
+
 ## 发布包公共接口
 
 ```sh
 python tools/verify_package.py
 ```
 
-脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。八项公开接口测试在四个后端运行，
-覆盖七种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入、thin 内容校验、嵌套引用解析与预算、COFF 双表与短导入对象、不可变比较快照和返回数组隔离。
+脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。九项公开接口测试在四个后端运行，
+覆盖七种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入、thin 内容校验、嵌套引用解析与预算、COFF 双表与短导入对象、LLVM bitcode、不可变比较快照和返回数组隔离。
 验证报告写到 `_build/verification/package-consumer.json`，包含版本与包摘要。
 
 ## 验收边界与持续集成

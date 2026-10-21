@@ -1060,33 +1060,34 @@ fn object_discover(
   }
   let magic = data[:4]
   if magic == b"\x7fELF"[:] {
-    return object_elf(data, budget)
+    return object_native_definitions(object_elf(data, budget))
   }
   if magic == b"\xce\xfa\xed\xfe"[:] {
-    return object_macho(data, false, true, budget)
+    return object_native_definitions(object_macho(data, false, true, budget))
   }
   if magic == b"\xcf\xfa\xed\xfe"[:] {
-    return object_macho(data, true, true, budget)
+    return object_native_definitions(object_macho(data, true, true, budget))
   }
   if magic == b"\xfe\xed\xfa\xce"[:] {
-    return object_macho(data, false, false, budget)
+    return object_native_definitions(object_macho(data, false, false, budget))
   }
   if magic == b"\xfe\xed\xfa\xcf"[:] {
-    return object_macho(data, true, false, budget)
+    return object_native_definitions(object_macho(data, true, false, budget))
   }
   if magic == b"\x00\x00\xff\xff"[:] {
     return object_coff_anonymous(data, budget)
   }
+  if magic == b"BC\xc0\xde"[:] || magic == b"\xde\xc0\x17\x0b"[:] {
+    return object_bitcode(data, budget)
+  }
   let coff_machine = data[0].to_int() + data[1].to_int() * 256
   if object_coff_machine(coff_machine) {
-    return object_coff(data, budget)
+    return object_native_definitions(object_coff(data, budget))
   }
   if magic == b"\xca\xfe\xba\xbe"[:] ||
     magic == b"\xbe\xba\xfe\xca"[:] ||
     magic == b"\xca\xfe\xba\xbf"[:] ||
     magic == b"\xbf\xba\xfe\xca"[:] ||
-    magic == b"BC\xc0\xde"[:] ||
-    magic == b"\xde\xc0\x17\x0b"[:] ||
     magic == b"\x00asm"[:] ||
     coff_machine == 0x0160 ||
     coff_machine == 0xa641 ||
@@ -1104,13 +1105,27 @@ fn object_discover(
 }
 
 ///|
+fn object_native_definitions(
+  names : Array[Bytes],
+) -> Array[Bytes] raise InvalidObject {
+  if names.contains(b"__gnu_lto_slim") || names.contains(b"___gnu_lto_slim") {
+    object_reject(
+      "OB002", 0, "GCC slim LTO requires plugin symbol discovery; use a fat object or explicit symbol mappings",
+    )
+  }
+  names
+}
+
+///|
 /// Discover archive-index names from relocatable ELF, Mach-O and COFF objects.
 /// ELF32/64 and Mach-O32/64 accept both byte orders. Defined external, weak,
 /// common and absolute symbols are included; undefined/local/debug symbols
 /// are omitted. Duplicate names within one object retain their first position.
 /// Standard little-endian COFF includes weak aliases and skips auxiliary records.
-/// Bigobj and short import objects are supported; executable images, bitcode
-/// and fat objects are rejected.
+/// Bigobj, short import objects and LLVM bitcode with an embedded version-3
+/// symbol table are supported. Bitcode wrappers and module groups are decoded
+/// without constructing IR. Executable images and universal objects are rejected.
+/// GCC slim LTO requires explicit mappings or plugin symbol discovery.
 /// Ordinary data returns an empty array; recognized unsupported object formats
 /// and malformed supported objects return an error.
 /// max_symbols counts inspected symbol-table entries, including filtered entries.

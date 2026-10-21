@@ -7,9 +7,9 @@ MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它�
 以及读取 `.deb` 的外层容器。也支持 Microsoft COFF `.lib` 静态库与导入库。
 核心库直接处理字节，不依赖外部 `ar` 程序。
 
-**0.5.0 扩展 Windows 与嵌套 thin 工作流**：读取和写出 COFF 双 linker-member，
-从标准 COFF、bigobj、短导入对象以及 ELF、Mach-O 对象自动发现符号。
-GNU thin 同时支持直接文件与 archive-offset 引用，覆盖创建、完整编辑、重定位、物化和内容比较。
+**0.6.0 支持 LLVM bitcode 自动索引**：Clang 的 full LTO、ThinLTO 对象可参与创建、编辑、
+thin 归档和格式转换，支持原始 bitcode 与 Mach-O 包装。保留 COFF 双 linker-member、
+bigobj、短导入对象、ELF、Mach-O 以及 GNU 直接/嵌套 thin 的完整工作流。
 
 ## 创建并使用静态库
 
@@ -120,7 +120,7 @@ COFF 两份 linker-member 会交叉校验并以第二份的排序映射公开。
 ## 作为 MoonBit 库使用
 
 ```sh
-moon add xmyd0915/moonar@0.5.0
+moon add xmyd0915/moonar@0.6.0
 ```
 
 在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
@@ -146,7 +146,7 @@ let data = archive.member_bytes(0).unwrap()
 | --- | --- |
 | 读取与写出 | GNU32/64、BSD32/64、Darwin32/64、Microsoft COFF 双索引；BSD/Darwin 支持大小端 |
 | thin | GNU 直接文件与嵌套 archive-offset 引用，GNU32/64 索引，创建、编辑、加载、重定位与物化 |
-| 自动符号发现 | ELF32/64、Mach-O32/64 大小端可重定位对象；标准 COFF、bigobj、短导入对象 |
+| 自动符号发现 | ELF32/64、Mach-O32/64、标准 COFF、bigobj、短导入对象；带版本 3 摘要表的 LLVM bitcode |
 | 成员 | 原始名称字节、长名称、重名、空内容、二进制数据和元数据 |
 | 比较 | 物理字节、普通成员内容、元数据、顺序、符号映射与重名配对歧义 |
 
@@ -158,7 +158,13 @@ Darwin 的对齐字节可能包含在成员声明大小内，提取时保留，�
 顺序与符号映射。重名成员优先按相同内容配对，无法唯一识别时报告 `ambiguities`。
 设计和案例见 [比较说明](docs/COMPARISON.md)。
 
-明确的格式边界：LTO/bitcode、fat Mach-O、AIX big archive 不在 0.5.0 支持范围内。
+LLVM bitcode 使用内嵌的版本 3 符号摘要表，读取编译器生成的已修饰名称及全局、弱、公共和
+别名定义；过滤局部、未定义和格式专用记录。支持模块组与包装偏移，并检查表范围、字符串、
+分组和共享预算。LLVM IR 指令、优化与代码生成由链接工具链处理。
+
+明确的格式边界：缺少支持的摘要表的旧 bitcode、GCC slim LTO 插件解析、fat Mach-O 和
+AIX big archive 不在 0.6.0 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
+仍可使用。库调用方也可提供显式符号映射。
 `check` 校验容器和索引结构，`--external` 另检查 thin 外部成员，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
 内层 tar 解压、链接器实现和包签名校验不属于本库职责。
 
@@ -173,6 +179,7 @@ python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe 
 python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_windows.py --moonar _build/native/debug/build/cmd/main/main.exe
+python tools/verify_lto.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_package.py
 ```
 
@@ -181,6 +188,8 @@ GNU/LLVM 验证需要 GNU ar/nm、LLVM ar、C 编译器和 Python 3.9+；Windows
 **zlib 1.3.1**：校验源码摘要，编译对象，用 MoonAr 分别创建普通及 thin 静态库，链接执行
 压缩/解压往返，再替换对象并重新链接执行。源码在临时目录处理，不随 MoonAr 分发。
 完整入口、预期结果及平台范围见 [复现指南](docs/REVIEW.md)。
+LTO 验证使用 Clang、LLD、LLVM ar，或 `verify_lto.py --zig PATH`：对照符号映射并完成
+普通/thin 创建、编辑、物化与混合原生对象的实际链接运行；嵌套引用先物化再交给 LLD。
 发行 ZIP 另通过独立 MoonBit 消费模块验证公开接口。
 
 [Linux / Windows CI](.github/workflows/ci.yml) 固定编译器与 core

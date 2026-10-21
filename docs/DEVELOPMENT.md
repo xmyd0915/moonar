@@ -13,6 +13,8 @@
 | `coff_symbols.mbt` / `coff_write.mbt` | Microsoft 双 linker-member 解析、交叉校验与写出 |
 | `nested_load.mbt` | 嵌套归档寻址、缓存、依赖枚举、累计预算与循环检查 |
 | `object_import.mbt` | bigobj 分类与短导入对象符号发现 |
+| `bitcode_stream.mbt` | LLVM 顶层块、摘要缩写、VBR 与零复制 blob 范围 |
+| `object_bitcode.mbt` | 版本 3 摘要结构、模块分区、名称与定义筛选 |
 | `thin_write.mbt` | thin 成员编辑、GNU32/64 写出、累计预算与物化 |
 | `object_symbols.mbt` | ELF/Mach-O/COFF 符号发现、结构约束与跨成员预算 |
 | `compare.mbt` | 内容优先配对、歧义报告、物理与逻辑比较、符号映射和顺序判断 |
@@ -84,6 +86,8 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
   失败保留、真实路径范围与输出别名保护。
 - `tools/verify_zlib.py` 校验上游 zlib 1.3.1 摘要，编译 15 个对象，创建普通及 thin
   静态库并运行压缩解压；替换对象及物化后重新链接运行。
+- `tools/verify_lto.py` 对照 LLVM 摘要映射，验证 full/ThinLTO 编辑、thin 物化、混合原生对象
+  与真实链接运行；另检查 GCC slim 拒绝及 fat 对象原生回退。
 - Linux 和 Windows CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
   GNU/LLVM 对照，以及 `dpkg-deb --info` 检查 Debian 示例。
 

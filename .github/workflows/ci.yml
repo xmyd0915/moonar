@@ -61,7 +61,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes binutils llvm clang gcc
+          sudo apt-get install --yes binutils llvm clang lld gcc
       - name: Compare with GNU and LLVM
         if: runner.os == 'Linux'
         run: python tools/verify_archives.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
@@ -74,6 +74,9 @@ jobs:
       - name: Verify real zlib regular and thin consumers
         if: runner.os == 'Linux'
         run: python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe --cc gcc
+      - name: Verify full and ThinLTO archive consumers
+        if: runner.os == 'Linux'
+        run: python tools/verify_lto.py --moonar _build/native/debug/build/cmd/main/main.exe
       - name: Check publish package
         run: moon package --list
       - name: Verify packaged public API consumers

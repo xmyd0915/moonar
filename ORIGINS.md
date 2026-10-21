@@ -25,6 +25,12 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
   COFF 对象头、节、符号、字符串、辅助记录、双 linker-member 库与短导入对象。
 - [LLVM 18.1.3 COFF.h](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/include/llvm/BinaryFormat/COFF.h)：
   bigobj 标识、扩展节号、符号大小和短导入对象字段定义。
+- [LLVM bitcode 格式](https://llvm.org/docs/BitCodeFormat.html)：位流、VBR、块、缩写、blob 与 wrapper。
+- [LLVM 18.1.3 IRSymtab.h](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/include/llvm/Object/IRSymtab.h)
+  及 [LLVM 21.1.0 定义](https://github.com/llvm/llvm-project/blob/llvmorg-21.1.0/llvm/include/llvm/Object/IRSymtab.h)：
+  版本 3 摘要头部、范围、模块、符号、comdat 与 uncommon 字段。
+- [GCC 开发者关于 slim LTO 标记的说明](https://gcc.gnu.org/pipermail/gcc/2023-February/240775.html)：
+  识别需要插件获取真实定义的 GCC slim 对象。
 
 实现所覆盖的格式和限制见 [README](README.md)。
 

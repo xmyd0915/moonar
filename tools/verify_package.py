@@ -214,7 +214,75 @@ test "public short import discovery and COFF dual indexes round trip" {
   assert_eq(archive.get_member(0).unwrap().kind, @ar.SymbolTable)
   assert_eq(archive.get_member(1).unwrap().kind, @ar.SymbolTable)
 }
+
+///|
+test "public LLVM bitcode discovery builds ordinary and thin archive indexes" {
+  let object = __BITCODE__
+  match @ar.symbols_from_object(object) {
+    Ok(names) => assert_eq(names, [b"entry"])
+    Err(error) => fail(error.message)
+  }
+  assert_true(@ar.symbols_from_object(object, max_symbols=0) is Err({ code: "OB003", .. }))
+  let plan = write_ok(@ar.ArchiveBuilder::from_members([@ar.WriteMember::new(b"entry.bc", object)]))
+  let symbols = write_ok(plan.discover_symbols())
+  let archive = parse_ok(@ar.parse(write_ok(plan.write(symbols=Some(symbols)))))
+  assert_eq(archive.symbol_indexes()[0].symbols[0].name, b"entry")
+  let thin = parse_ok(@ar.parse_thin(write_ok(write_ok(@ar.ThinArchiveBuilder::from_members([
+    @ar.ThinWriteMember::new(b"entry.bc", object.length()),
+  ])).write(symbols=Some(symbols)))))
+  let loaded = parse_ok(thin.materialize((_, _) => Ok(object), drop_symbol_indexes=true))
+  assert_eq(write_ok(loaded.discover_symbols()), symbols)
+}
 '''
+
+
+def bitcode_fixture():
+    # Explicit version-3 summary wire data and a single module envelope. The
+    # independent compiler/linker workflow is exercised by verify_lto.py.
+    class Bits:
+        def __init__(self):
+            self.values = []
+        def fixed(self, value, width):
+            self.values.extend((value >> bit) & 1 for bit in range(width))
+        def vbr(self, value, width):
+            mask = (1 << (width - 1)) - 1
+            while value > mask:
+                self.fixed((value & mask) | (1 << (width - 1)), width)
+                value >>= width - 1
+            self.fixed(value, width)
+        def align(self):
+            self.values.extend([0] * (-len(self.values) % 32))
+        def data(self):
+            assert len(self.values) % 8 == 0
+            return bytes(sum(self.values[start + bit] << bit for bit in range(8))
+                         for start in range(0, len(self.values), 8))
+    def block(identifier, body):
+        bits = Bits()
+        bits.fixed(1, 2)
+        bits.vbr(identifier, 8)
+        bits.vbr(3, 4)
+        bits.align()
+        bits.fixed(len(body) // 4, 32)
+        return bits.data() + body
+    def blob(data):
+        bits = Bits()
+        bits.fixed(2, 3)
+        bits.vbr(2, 5)
+        bits.fixed(1, 1)
+        bits.vbr(1, 8)
+        bits.fixed(0, 1)
+        bits.fixed(5, 3)
+        bits.fixed(4, 3)
+        bits.vbr(len(data), 6)
+        bits.align()
+        before = bits.data() + data + b"\0" * (-len(data) % 4)
+        return before + b"\0" * 4
+    header = [0] * 19
+    for index, value in {0: 3, 3: 76, 4: 1, 5: 88, 7: 88, 8: 1, 9: 112, 17: 112}.items():
+        header[index] = value
+    table = struct.pack("<19I", *header) + struct.pack("<3I", 0, 1, 0)
+    table += struct.pack("<6I", 0, 5, 0, 5, 0xffffffff, 1024)
+    return b"BC\xc0\xde" + block(8, b"\0" * 4) + block(25, blob(table)) + block(23, blob(b"entry"))
 
 
 def elf_fixture():
@@ -289,8 +357,9 @@ def main():
             f'import {{ "{module}" @ar, }} for "test"\n', encoding="utf-8",
         )
         fixture = 'b"' + "".join(f"\\x{byte:02x}" for byte in elf_fixture()) + '"'
+        bitcode = 'b"' + "".join(f"\\x{byte:02x}" for byte in bitcode_fixture()) + '"'
         (consumer / "consumer_test.mbt").write_text(
-            CONSUMER.replace("__OBJECT__", fixture).lstrip(), encoding="utf-8",
+            CONSUMER.replace("__OBJECT__", fixture).replace("__BITCODE__", bitcode).lstrip(), encoding="utf-8",
         )
         output = run([
             args.moon, "test", "--target", "all", "--deny-warn",
@@ -307,6 +376,7 @@ def main():
             "ThinArchiveBuilder", "ThinArchive.materialize", "compare_logical",
             "ThinArchive.validate_members", "ArchiveSnapshot.compare_logical",
             "ThinArchive.resolve_member", "ThinArchive.member_sources", "NestedLimits", "WriteFormat.Coff",
+            "LLVM bitcode version-3 symbol discovery",
         ],
     }
     report = args.report if args.report.is_absolute() else root / args.report

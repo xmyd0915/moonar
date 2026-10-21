@@ -1,5 +1,23 @@
 # Changes
 
+## 0.6.0 — 2026-10-21
+
+- Discover archive symbols from LLVM bitcode carrying an embedded version-3
+  IR symbol table, including raw streams, wrappers and multiple module groups.
+- Validate summary ranges, strings, comdat references, module partitions,
+  uncommon records, VBR fields and block envelopes before publishing indexes.
+- Include defined external, weak, common and alias names using compiler-provided
+  mangling; filter local, undefined and format-specific records.
+- Reuse shared discovery budgets for bitcode alongside ELF, Mach-O and COFF;
+  bound summary abbreviations and avoid expanding zero-width arrays.
+- Reject GCC slim LTO markers instead of emitting misleading archive indexes;
+  retain native definitions in fat objects and explicit mapping support.
+- Add compiler-produced full/ThinLTO consumers with LLVM reference maps,
+  complete edits, thin materialization, mixed native objects and actual links.
+
+The public method signatures remain unchanged. Bitcode without the supported
+embedded summary returns `OB002`; automatic archive discovery reports `WR006`.
+
 ## 0.5.0 — 2026-10-21
 
 - Read and write Microsoft COFF libraries with cross-checked dual linker members,

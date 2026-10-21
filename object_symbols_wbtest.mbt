@@ -9,12 +9,15 @@ fn object_fixture_elf(
   little : Bool,
   extended? : Bool = false,
   second_table? : Bool = false,
+  slim? : Bool = false,
 ) -> Bytes {
   let header_size = if wide { 64 } else { 52 }
   let section_size = if wide { 64 } else { 40 }
   let symbol_size = if wide { 24 } else { 16 }
   let width = if wide { 8 } else { 4 }
-  let strings = b"\x00local\x00file\x00section\x00global\x00weak\x00common\x00absolute\x00undefined\x00"
+  let strings = b"\x00local\x00file\x00section\x00global\x00weak\x00common\x00" +
+    (if slim { b"__gnu_lto_slim\x00" } else { b"absolute\x00" }) +
+    b"undefined\x00"
   let string_offset = header_size + 1
   let symbol_offset = string_offset + strings.length()
   let specs = [
@@ -26,7 +29,7 @@ fn object_fixture_elf(
     (27, 34, 1),
     (32, 17, 65522),
     (39, 16, 65521),
-    (48, 18, 0),
+    (if slim { 54 } else { 48 }, 18, 0),
   ]
   let mut symbols = b""
   for (name, info, section) in specs {
@@ -482,8 +485,7 @@ test "object discovery budgets bound filtered entries expanded names and complet
 test "recognized unsupported formats and broken object signatures cannot become an empty index" {
   for
     data in [
-      b"BC\xc0\xde", b"\xde\xc0\x17\x0b", b"\xca\xfe\xba\xbe", b"\x00asm", b"!<arch>\n",
-      b"!<thin>\n",
+      b"BC\xc0\xde", b"\xca\xfe\xba\xbe", b"\x00asm", b"!<arch>\n", b"!<thin>\n",
     ] {
     assert_true(symbols_from_object(data) is Err({ code: "OB002", .. }))
   }
