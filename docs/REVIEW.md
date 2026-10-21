@@ -50,6 +50,8 @@ python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe -
 在 native 和 Node 两个真实文件入口检查：Unicode 名称与二进制内容、新建禁止覆盖、
 `--force`、失败保留原字节、两进程竞争只有一个成功、临时文件清理、目录联接/符号链接
 真实路径范围、允许父目录访问、提取源和 thin 依赖的输出别名保护。
+另外验证 `check --external`、thin/普通归档直接逻辑比较、容器相同而外部内容改变、
+缺失和大小错误，以及重复引用累计预算。
 Windows 增加大小写别名，POSIX 检查替换后权限保留。路径能力因平台受限时脚本明确报出。
 
 ## zlib 真实构建消费者
@@ -76,8 +78,8 @@ python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_package.py
 ```
 
-脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。五项公开接口测试在四个后端运行，
-覆盖六种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入和返回数组隔离。
+脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。六项公开接口测试在四个后端运行，
+覆盖六种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入、thin 内容校验、不可变比较快照和返回数组隔离。
 验证报告写到 `_build/verification/package-consumer.json`，包含版本与包摘要。
 
 ## 验收边界与持续集成

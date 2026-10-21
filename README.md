@@ -6,7 +6,7 @@ MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它�
 归档的读取、创建、编辑、转换、符号索引维护与比较，可用于构建静态库 `.a`、处理构建产物，
 以及读取 `.deb` 的外层容器。核心库直接处理字节，不依赖外部 `ar` 程序。
 
-**0.3.0 提供完整的归档编辑流程**：从 ELF、Mach-O 和标准 COFF 对象发现符号，写出
+**0.4.0 提供归档编辑与 thin 内容比较**：从 ELF、Mach-O 和标准 COFF 对象发现符号，写出
 GNU/BSD/Darwin 归档；追加、插入、替换、删除、移动或重命名后自动重建索引。
 GNU thin 支持直接外部文件引用、32/64 位索引、路径重定位和普通归档物化。
 
@@ -60,8 +60,18 @@ thin 保存外部成员引用，普通归档保存成员数据。编辑 thin 会
 默认加载范围为归档所在目录及其子目录，真实路径检查会处理符号链接与 Windows 目录联接。
 构建目录确需引用父目录时显式加 `--allow-parent-paths`。
 
-`check` 只校验容器和索引，不加载外部文件；自动索引、提取和物化会核对外部文件是否存在、
-声明大小是否匹配以及累计数据预算。删除已丢失的 thin 成员后仍可重新建立有效索引。
+`check` 默认校验容器和索引；加 `--external` 会加载全部 thin 成员，核对路径、实际长度和
+累计预算。删除已丢失的 thin 成员后仍可重新建立有效索引。
+
+```sh
+moonar check libthin.a --external
+moonar diff before/libthin.a after/libthin.a --logical --json
+moonar diff libthin.a libpacked.a --logical
+```
+
+逻辑比较直接支持 thin 与普通归档的任意组合，比较实际加载的内容、元数据、顺序及原索引映射。
+`bytes_equal` 始终比较容器字节，因此两个 thin 容器可以字节相同、外部内容不同。
+差异中的成员位置仍对应原归档的物理记录，无需先写出临时归档。
 
 ## 命令与格式
 
@@ -77,7 +87,7 @@ thin 保存外部成员引用，普通归档保存成员数据。编辑 thin 会
 | `extract ARCHIVE INDEX OUT` | 将指定成员写入明确的输出路径 |
 | `convert ARCHIVE OUT` | 转换普通归档布局，或将 thin 物化 |
 | `index ARCHIVE` | 从对象重新发现符号并建立索引 |
-| `diff BEFORE AFTER [--logical]` | 比较普通归档的物理字节或逻辑内容 |
+| `diff BEFORE AFTER [--logical]` | 普通归档物理比较；普通/thin 归档的直接逻辑比较 |
 
 写出选项：
 
@@ -100,7 +110,7 @@ thin 保存外部成员引用，普通归档保存成员数据。编辑 thin 会
 ## 作为 MoonBit 库使用
 
 ```sh
-moon add xmyd0915/moonar@0.3.0
+moon add xmyd0915/moonar@0.4.0
 ```
 
 在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
@@ -116,7 +126,8 @@ let data = archive.member_bytes(0).unwrap()
 
 对象归档使用 `plan.discover_symbols()` 获取最终成员映射，再传给
 `plan.write(symbols=Some(symbols))`。thin 使用独立的 `ThinArchiveBuilder` 和 `parse_thin`；
-加载器由调用方提供，解析不隐式访问磁盘。库接口返回 `Result`，示例中的 `unwrap()`
+加载器由调用方提供，解析不隐式访问磁盘。`thin.snapshot(loader)` 捕获已加载内容，
+再用 `snapshot.compare_logical(other)` 与另一个 thin 快照或 `ordinary.snapshot()` 比较。库接口返回 `Result`，示例中的 `unwrap()`
 适用于固定有效输入。详见 [读写 API](docs/WRITING.md) 和 [生成接口](pkg.generated.mbti)。
 
 ## 格式范围与比较
@@ -138,8 +149,8 @@ Darwin 的对齐字节可能包含在成员声明大小内，提取时保留，�
 设计和案例见 [比较说明](docs/COMPARISON.md)。
 
 明确的格式边界：GNU thin 嵌套 archive-offset 引用、COFF 双 linker-member 归档、
-COFF bigobj/import object、LTO/bitcode、fat Mach-O、AIX big archive 不在 0.3.0 支持范围内。
-`check` 校验容器和索引结构，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
+COFF bigobj/import object、LTO/bitcode、fat Mach-O、AIX big archive 不在 0.4.0 支持范围内。
+`check` 校验容器和索引结构，`--external` 另检查 thin 外部成员，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
 内层 tar 解压、链接器实现和包签名校验不属于本库职责。
 
 ## 验证与实际消费者
@@ -172,6 +183,7 @@ GNU/LLVM、Python 与 C 编译器仅用于构建或验证；核心库只依赖 M
 `--max-symbols`、`--max-symbol-name-bytes` 调整。符号发现对扫描数量计费，重复引用按
 展开长度计费。大小和偏移使用有符号 32 位整数。
 
+thin 内容检查与快照对每个输入的全部外部成员累计使用字节预算，重复引用分别计费。
 CLI 先读取完整文件再检查预算；比较、输出和对象发现需要额外内存。当前接口使用内存输入，
 不提供流式读写。文件系统路径检查与打开之间存在并发替换窗口，调用方应控制构建目录的写入。
 

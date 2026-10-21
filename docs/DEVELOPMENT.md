@@ -13,6 +13,7 @@
 | `thin_write.mbt` | thin 成员编辑、GNU32/64 写出、累计预算与物化 |
 | `object_symbols.mbt` | ELF/Mach-O/COFF 符号发现、结构约束与跨成员预算 |
 | `compare.mbt` | 内容优先配对、歧义报告、物理与逻辑比较、符号映射和顺序判断 |
+| `snapshot.mbt` | thin 加载预检、累计预算、只读内容校验与不可变比较快照 |
 | `json.mbt` | 版本化 JSON 输出与无损名称表示 |
 | `cli/` | 参数解析、命令执行和退出码 |
 | `cmd/main/` | native/Node 文件接口、原子发布、真实路径检查与命令行入口 |

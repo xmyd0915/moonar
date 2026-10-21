@@ -191,5 +191,7 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
     max_symbols,
     max_symbol_name_bytes,
     logical: false,
+    external: false,
+    allow_parent_paths: allow_parent,
   })
 }

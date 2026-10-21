@@ -54,3 +54,21 @@ Darwin 数据内的填充与真实文件末尾换行不可无条件区分，逻�
 Darwin 确定性重名归档可能调整时间戳，内容匹配后仍报告真实元数据变化。
 对象内部定义、机器码及 ABI 不属于比较范围；索引结构有效不代表链接成功。
 CLI 使用完整文件的内存输入，资源预算约束解析阶段；输出和副本也需要额外内存。
+
+## thin 的直接内容比较
+
+```sh
+moonar check before/libthin.a --external
+moonar diff before/libthin.a after/libthin.a --logical --json
+moonar diff before/libthin.a packed.a --logical
+```
+
+每个 thin 输入以其自身目录解析引用，加载成员后与普通归档使用相同的逻辑配对规则。
+名称、元数据、顺序和原索引映射均参与比较。差异序号仍对应原输入的物理记录。
+
+两个 thin 容器可以完全相同，而所在目录的同名对象内容不同。此时 `bytes_equal=true`、
+`content_equal=false`，退出码为 1。加载失败退出 2；缺失、大小变化、路径和累计预算均有诊断。
+默认不允许读取目录之外的真实目标，需要时显式传入 `--allow-parent-paths`。
+
+公共库可使用 `ThinArchive.snapshot(loader)` 与 `Archive.snapshot()` 捕获不可变比较输入。
+thin 文件自身不保存旧对象；跨时间比较需要在各时间点分别捕获快照。

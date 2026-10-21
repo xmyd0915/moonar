@@ -91,6 +91,28 @@ let bytes = plan.write(format=@ar.Gnu64, symbols=Some(symbols)).unwrap()
 外部成员累计数据预算，含重复引用；单次 `load_member` 的预算只约束该成员。
 存在索引时，物化必须显式同意丢弃，再由新 Builder 重新发现或指定符号。
 
+## 外部成员校验与比较快照
+
+`thin.validate_members(loader, max_bytes?, allow_parent_paths?)` 校验全部直接外部引用，返回
+实际加载的累计字节数。所有路径及累计声明大小在首次加载前检查；加载器失败返回 `AR013`，
+实际长度不符返回 `AR014`，预算失败返回 `AR008`。此方法逐个检查，不保留已检查的数据。
+
+`thin.snapshot(loader, max_bytes?, allow_parent_paths?)` 返回不可变 `ArchiveSnapshot`，
+保存加载所得的成员内容。普通归档使用 `archive.snapshot()`，无需加载器。
+两种快照通过 `before.compare_logical(after)` 直接比较，返回现有 `LogicalComparison`。
+
+比较保留原索引映射与原始物理成员位置，不重新发现对象符号，不写出中间归档。
+`bytes_equal` 比较原容器；`content_equal` 比较实际加载的普通成员。因此 thin 容器完全相同，
+仍可能得到 `bytes_equal=true`、`content_equal=false`。相同名称的符号目标顺序仍参与比较。
+
+快照建立后无需再次访问文件。加载期间的多文件读取不是原子事务，应由调用方控制并发写入。
+thin 容器不保存外部文件的历史内容；需要跨时间比较时，应分别在两个时间点捕获快照。
+名称按原始路径字节比较，不自动折叠为文件 basename。
+
+CLI 使用 `check FILE --external` 检查外部成员，用 `diff BEFORE AFTER --logical`
+直接比较普通/thin 的任意组合。默认真实路径根目录检查及 `--allow-parent-paths` 与编辑流程一致。
+`check --external` 的外部加载失败退出 1，逻辑比较的输入/加载失败退出 2。
+
 ## thin 创建与编辑
 
 `ThinWriteMember::new(name, size, metadata?)` 描述外部文件引用。

@@ -140,6 +140,10 @@ def verify_containment(label, command, root, place):
     directory_alias(base / "link", outside)
     thin_fixture(base / "escape.a", b"link/member.bin", 7)
     thin_fixture(base / "normal.a", b"member.bin", 6)
+    run(command, ["check", base / "escape.a", "--external"], root, expected=1)
+    run(command, ["check", base / "escape.a", "--external", "--allow-parent-paths"], root)
+    run(command, ["diff", base / "escape.a", base / "escape.a", "--logical"], root, expected=2)
+    run(command, ["diff", base / "escape.a", base / "escape.a", "--logical", "--allow-parent-paths"], root)
     bad = base / "escape-result.a"
     run(command, ["convert", base / "escape.a", bad, "--index", "none"], root, expected=2)
     assert not bad.exists()
@@ -210,6 +214,52 @@ def verify_alias_protection(label, command, root, place):
     print(f"PASS {label}: canonical aliases cannot overwrite the source archive or a thin member")
 
 
+
+def verify_external_queries(label, command, root, place):
+    left, right = place / "query-left", place / "query-right"
+    left.mkdir()
+    right.mkdir()
+    payload = bytes(range(256)) * 20
+    for directory in (left, right):
+        (directory / "member.bin").write_bytes(payload)
+        run(command, ["create", directory / "lib.a", directory / "member.bin", "--thin"], root)
+    before, after = left / "lib.a", right / "lib.a"
+    originals = (before.read_bytes(), after.read_bytes())
+    assert originals[0] == originals[1]
+    checked = json.loads(run(command, ["check", before, "--external", "--json"], root).stdout)
+    assert checked["external_checked"] is True
+    assert checked["external_byte_length"] == len(payload)
+    packed = place / "query-packed.a"
+    run(command, ["convert", before, packed], root)
+    for a, b in [(before, after), (before, packed), (packed, before)]:
+        delta = json.loads(run(command, ["diff", a, b, "--logical", "--json"], root).stdout)
+        assert delta["content_equal"] and delta["symbols_equal"]
+        assert not delta["symbol_index_presence_changed"]
+    (right / "member.bin").write_bytes(payload[::-1])
+    changed = json.loads(run(command, ["diff", before, after, "--logical", "--json"], root, expected=1).stdout)
+    assert changed["bytes_equal"] is True and changed["content_equal"] is False
+    target = next(item["index"] for item in checked["members"] if item["kind"] == "regular")
+    assert changed["changes"][0]["payload_changed"] is True
+    assert changed["changes"][0]["before_index"] == target
+    assert changed["changes"][0]["after_index"] == target
+    text = run(command, ["diff", before, after, "--logical"], root, expected=1).stdout
+    assert b"container bytes are identical" in text and b"payload=true" in text
+    (right / "member.bin").write_bytes(b"wrong size")
+    run(command, ["check", after], root)
+    mismatch = json.loads(run(command, ["check", after, "--external", "--json"], root, expected=1).stdout)
+    assert mismatch["input"] == str(after) and mismatch["error"]["code"] == "AR014"
+    (right / "member.bin").unlink()
+    missing = json.loads(run(command, ["diff", before, after, "--logical", "--json"], root, expected=2).stdout)
+    assert missing["input"] == str(after) and missing["error"]["code"] == "AR013"
+    repeated = left / "repeated.a"
+    run(command, ["create", repeated, left / "member.bin", left / "member.bin", "--thin", "--index", "none"], root)
+    budget = json.loads(run(command, [
+        "check", repeated, "--external", "--max-bytes", len(payload) + 1000, "--json",
+    ], root, expected=1).stdout)
+    assert budget["error"]["code"] == "AR008"
+    assert (before.read_bytes(), after.read_bytes()) == originals
+    print(f"PASS {label}: thin external validation, mixed-storage comparison, unchanged-container content changes and failure diagnostics")
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moonar", required=True)
@@ -228,6 +278,7 @@ def main():
             place = verify_publication(label, command, root)
             verify_containment(label, command, root, place)
             verify_alias_protection(label, command, root, place)
+            verify_external_queries(label, command, root, place)
 
 
 if __name__ == "__main__":

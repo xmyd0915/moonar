@@ -1,5 +1,24 @@
 # Changes
 
+## 0.4.0 — 2026-10-21
+
+- Add immutable comparison snapshots for ordinary and thin archives, retaining
+  original physical positions and symbol mappings without a rewrite.
+- Compare thin/thin and thin/regular contents directly with `diff --logical`;
+  keep container byte equality separate from loaded external content equality.
+- Add `ThinArchive.validate_members` and `check --external` with path preflight,
+  cumulative byte budgets, declared-size checks and precise loading diagnostics.
+- Apply filesystem root checks and explicit parent-path opt-in to read-only thin
+  queries; preserve normal metadata-only checks without external file access.
+- Extend native/Node filesystem and packaged public API consumer regressions.
+
+### API notes
+
+`cli.Request` adds `external` and `allow_parent_paths`; code constructing the
+record directly must supply them. Existing parser and comparison entry points
+remain available. Thin snapshot comparison reports original-container
+`bytes_equal`, which may be true while loaded `content_equal` is false.
+
 ## 0.3.0 — 2026-10-20
 
 - Add a separate GNU thin archive API with GNU32/64 symbol references,

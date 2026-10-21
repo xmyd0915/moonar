@@ -25,6 +25,7 @@ pub fn Archive::edit(Self, drop_symbol_indexes? : Bool) -> Result[ArchiveBuilder
 pub fn Archive::get_member(Self, Int) -> Member?
 pub fn Archive::member_bytes(Self, Int) -> Bytes?
 pub fn Archive::member_count(Self) -> Int
+pub fn Archive::snapshot(Self) -> ArchiveSnapshot
 pub fn Archive::symbol_indexes(Self) -> Array[SymbolIndex]
 pub fn Archive::to_json(Self) -> Json
 pub fn Archive::to_repr(Self) -> @debug.Repr
@@ -42,6 +43,10 @@ pub fn ArchiveBuilder::remove(Self, Int) -> Result[Self, WriteError]
 pub fn ArchiveBuilder::replace(Self, Int, WriteMember) -> Result[Self, WriteError]
 pub fn ArchiveBuilder::to_repr(Self) -> @debug.Repr
 pub fn ArchiveBuilder::write(Self, format? : WriteFormat, metadata? : WriteMetadata, symbols? : Array[WriteSymbol]?, index_little_endian? : Bool, max_bytes? : Int, max_members? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int) -> Result[Bytes, WriteError]
+
+type ArchiveSnapshot derive(@debug.Debug)
+pub fn ArchiveSnapshot::compare_logical(Self, Self) -> LogicalComparison
+pub fn ArchiveSnapshot::to_repr(Self) -> @debug.Repr
 
 pub(all) enum ChangeKind {
   Added
@@ -185,9 +190,11 @@ pub fn ThinArchive::load_member(Self, Int, (Bytes, Int) -> Result[Bytes, String]
 pub fn ThinArchive::materialize(Self, (Bytes, Int) -> Result[Bytes, String], drop_symbol_indexes? : Bool, allow_parent_paths? : Bool, max_bytes? : Int) -> Result[ArchiveBuilder, ParseError]
 pub fn ThinArchive::member_count(Self) -> Int
 pub fn ThinArchive::member_path(Self, Int, allow_parent_paths? : Bool) -> Result[Bytes, ParseError]
+pub fn ThinArchive::snapshot(Self, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool) -> Result[ArchiveSnapshot, ParseError]
 pub fn ThinArchive::symbol_indexes(Self) -> Array[SymbolIndex]
 pub fn ThinArchive::to_json(Self) -> Json
 pub fn ThinArchive::to_repr(Self) -> @debug.Repr
+pub fn ThinArchive::validate_members(Self, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool) -> Result[Int, ParseError]
 
 type ThinArchiveBuilder derive(@debug.Debug)
 pub fn ThinArchiveBuilder::append(Self, ThinWriteMember) -> Result[Self, WriteError]

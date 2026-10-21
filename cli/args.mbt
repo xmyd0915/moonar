@@ -25,6 +25,8 @@ pub(all) struct Request {
   max_name_bytes : Int
   max_symbols : Int
   max_symbol_name_bytes : Int
+  external : Bool
+  allow_parent_paths : Bool
 }
 
 ///|
@@ -70,6 +72,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       max_name_bytes: 67108864,
       max_symbols: 1000000,
       max_symbol_name_bytes: 67108864,
+      external: false,
+      allow_parent_paths: false,
     })
   }
   if args == ["--version"] {
@@ -82,6 +86,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       max_name_bytes: 67108864,
       max_symbols: 1000000,
       max_symbol_name_bytes: 67108864,
+      external: false,
+      allow_parent_paths: false,
     })
   }
   if args.is_empty() ||
@@ -101,6 +107,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
   let mut max_symbols = 1000000
   let mut max_symbol_name_bytes = 67108864
   let mut logical = false
+  let mut external = false
+  let mut allow_parent_paths = false
   let seen : Map[String, Unit] = Map([])
   let mut literal = false
   let mut i = 1
@@ -120,6 +128,16 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
         return Err("--logical is allowed once, only with diff")
       }
       logical = true
+    } else if arg == "--external" {
+      if args[0] != "check" || external {
+        return Err("--external is allowed once, only with check")
+      }
+      external = true
+    } else if arg == "--allow-parent-paths" {
+      if allow_parent_paths {
+        return Err("--allow-parent-paths was specified more than once")
+      }
+      allow_parent_paths = true
     } else if arg == "--max-bytes" ||
       arg == "--max-members" ||
       arg == "--max-name-bytes" ||
@@ -151,8 +169,14 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     i += 1
   }
   let expected_paths = if args[0] == "diff" { 2 } else { 1 }
-  if paths.length() != expected_paths || paths.any(fn(path) { path.is_empty() }) {
+  if paths.length() != expected_paths ||
+    paths.any(fn(path) { path.is_empty() || path.contains("\u0000") }) {
     return Err("this command needs exactly \{expected_paths} input file(s)")
+  }
+  if allow_parent_paths && !external && !logical {
+    return Err(
+      "--allow-parent-paths requires check --external or diff --logical",
+    )
   }
   let command = if args[0] == "diff" {
     Diff(paths[0], paths[1])
@@ -172,5 +196,7 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     max_name_bytes,
     max_symbols,
     max_symbol_name_bytes,
+    external,
+    allow_parent_paths,
   })
 }

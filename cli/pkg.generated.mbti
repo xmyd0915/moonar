@@ -61,6 +61,8 @@ pub(all) struct Request {
   max_name_bytes : Int
   max_symbols : Int
   max_symbol_name_bytes : Int
+  external : Bool
+  allow_parent_paths : Bool
 }
 
 // Type aliases

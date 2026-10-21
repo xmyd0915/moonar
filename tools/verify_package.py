@@ -158,6 +158,26 @@ test "public logical comparison and endian selection work across packages" {
   exposed[0].symbols.clear()
   assert_eq(bsd.symbol_indexes()[0].symbols.length(), 1)
 }
+///|
+test "public immutable snapshots validate thin contents and preserve source identity" {
+  let plan = write_ok(@ar.ThinArchiveBuilder::from_members([
+    @ar.ThinWriteMember::new(b"data", 3),
+  ]))
+  let thin = parse_ok(@ar.parse_thin(write_ok(plan.write())))
+  assert_eq(parse_ok(thin.validate_members((_, _) => Ok(b"abc"))), 3)
+  let before = parse_ok(thin.snapshot((_, _) => Ok(b"abc")))
+  let after = parse_ok(thin.snapshot((_, _) => Ok(b"xyz")))
+  let result = before.compare_logical(after)
+  assert_true(result.bytes_equal && !result.content_equal)
+  assert_eq(result.changes[0].before_index, Some(1))
+  let ordinary = parse_ok(@ar.parse(write_ok(write_ok(@ar.ArchiveBuilder::from_members([
+    @ar.WriteMember::new(b"data", b"abc"),
+  ])).write())))
+  let mixed = before.compare_logical(ordinary.snapshot())
+  assert_true(mixed.content_equal && mixed.symbols_equal)
+  assert_true(thin.validate_members((_, _) => Ok(b"x")) is Err({ code: "AR014", .. }))
+}
+
 '''
 
 
@@ -243,12 +263,13 @@ def main():
         print(output.strip())
     record = {
         "version": version, "archive": str(archive), "archive_sha256": digest,
-        "packaged_files": len(files), "consumer_tests_per_target": 5,
+        "packaged_files": len(files), "consumer_tests_per_target": 6,
         "targets": ["wasm", "wasm-gc", "js", "native"], "passed": True,
         "interfaces": [
             "symbols_from_object", "ArchiveBuilder.discover_symbols",
             "ArchiveBuilder.insert", "WriteFormat six layouts",
             "ThinArchiveBuilder", "ThinArchive.materialize", "compare_logical",
+            "ThinArchive.validate_members", "ArchiveSnapshot.compare_logical",
         ],
     }
     report = args.report if args.report.is_absolute() else root / args.report

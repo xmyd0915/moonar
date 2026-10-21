@@ -3,13 +3,37 @@ fn load_diff_input(
   request : Request,
   path : String,
   read : (String) -> Result[Bytes, String],
-) -> Result[@ar.Archive, Reply] {
+  validate_path : (String, String) -> Result[Unit, String],
+) -> Result[(@ar.ArchiveSnapshot, @ar.Archive?), Reply] {
   let bytes = match read(path) {
     Ok(bytes) => bytes
     Err(message) =>
       return Err(
         error_reply("IO001", "\{path}: \{message}", request.json_output, 2),
       )
+  }
+  if bytes.has_prefix(b"!<thin>\n"[:]) && request.logical {
+    let archive = match
+      @ar.parse_thin(
+        bytes,
+        max_bytes=request.max_bytes,
+        max_members=request.max_members,
+        max_name_bytes=request.max_name_bytes,
+        max_symbols=request.max_symbols,
+        max_symbol_name_bytes=request.max_symbol_name_bytes,
+      ) {
+      Ok(archive) => archive
+      Err(error) => return Err(archive_input_error(request, path, error, 2))
+    }
+    return match
+      archive.snapshot(
+        external_reader(path, request.allow_parent_paths, read, validate_path),
+        max_bytes=request.max_bytes,
+        allow_parent_paths=request.allow_parent_paths,
+      ) {
+      Ok(snapshot) => Ok((snapshot, None))
+      Err(error) => Err(archive_input_error(request, path, error, 2))
+    }
   }
   match
     @ar.parse(
@@ -20,42 +44,42 @@ fn load_diff_input(
       max_symbols=request.max_symbols,
       max_symbol_name_bytes=request.max_symbol_name_bytes,
     ) {
-    Ok(archive) => Ok(archive)
+    Ok(archive) => Ok((archive.snapshot(), Some(archive)))
     Err(error) =>
       Err(
-        if request.json_output {
-          {
-            exit_code: 2,
-            stdout: Json::object({
-              "schema_version": Json(1),
-              "input": Json(path),
-              "error": Json::object({
-                "code": Json(error.code),
-                "offset": Json(error.offset),
-                "message": Json(error.message),
-              }),
-            }).stringify() +
-            "\n",
-            stderr: "",
-          }
-        } else {
-          {
-            exit_code: 2,
-            stdout: "",
-            stderr: "\{Json(path).stringify()}: \{error.code} at byte \{error.offset}: \{error.message}\n",
-          }
-        },
+        archive_input_error(
+          request,
+          path,
+          if error.code == "AR007" {
+            {
+              ..error,
+              message: "use diff --logical to compare thin archive contents",
+            }
+          } else {
+            error
+          },
+          2,
+        ),
       )
   }
 }
 
 ///|
 fn diff_text(result : @ar.Comparison) -> String {
-  if result.bytes_equal {
+  if result.bytes_equal &&
+    result.changes.is_empty() &&
+    !result.order_changed &&
+    result.ambiguities.is_empty() {
     return "Archives are byte-for-byte identical.\n"
   }
   let out = StringBuilder()
-  out.write_string("Archive bytes differ.\n")
+  out.write_string(
+    if result.bytes_equal {
+      "Archive container bytes are identical.\n"
+    } else {
+      "Archive bytes differ.\n"
+    },
+  )
   if result.order_changed {
     out.write_string("Relative record order changed.\n")
   }
@@ -90,17 +114,19 @@ fn run_diff(
   before_path : String,
   after_path : String,
   read : (String) -> Result[Bytes, String],
+  validate_path : (String, String) -> Result[Unit, String],
 ) -> Reply {
-  let before = match load_diff_input(request, before_path, read) {
+  let before = match
+    load_diff_input(request, before_path, read, validate_path) {
     Ok(archive) => archive
     Err(reply) => return reply
   }
-  let after = match load_diff_input(request, after_path, read) {
+  let after = match load_diff_input(request, after_path, read, validate_path) {
     Ok(archive) => archive
     Err(reply) => return reply
   }
   if request.logical {
-    let result = @ar.compare_logical(before, after)
+    let result = before.0.compare_logical(after.0)
     let equal = result.content_equal &&
       !result.metadata_changed &&
       !result.order_changed &&
@@ -126,7 +152,7 @@ fn run_diff(
     }
     return { exit_code: if equal { 0 } else { 1 }, stdout, stderr: "", }
   }
-  let result = @ar.compare(before, after)
+  let result = @ar.compare(before.1.unwrap(), after.1.unwrap())
   {
     exit_code: if result.bytes_equal {
       0

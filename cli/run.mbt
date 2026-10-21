@@ -1,6 +1,6 @@
 ///|
 pub fn help() -> String {
-  "MoonAr 0.3.0\nUsage: moonar list|inspect|check FILE [--json]\n       moonar diff BEFORE AFTER [--logical] [--json]\n       moonar create OUT [FILES...] [--thin]\n       moonar add ARCHIVE FILES... [--at N]\n       moonar replace ARCHIVE INDEX FILE\n       moonar delete ARCHIVE INDEX...\n       moonar move ARCHIVE FROM TO\n       moonar rename ARCHIVE INDEX NAME\n       moonar extract ARCHIVE INDEX OUT\n       moonar convert ARCHIVE OUT\n       moonar index ARCHIVE\n       moonar --help | --version\nWrite options: --format gnu|gnu64|bsd|bsd64|darwin|darwin64 (gnu),\n               --index auto|none (auto), --output FILE, --force,\n               --preserve-metadata, --big-endian-index, --json.\nThin access: --allow-parent-paths permits external references outside the archive directory.\nMember positions are zero-based ordinary-member positions shown by list.\ninspect shows physical records; check validates metadata without loading external files.\nEdits retain thin storage; convert materializes thin inputs into regular archives.\nNew outputs require --force to replace an existing file; in-place edits replace atomically.\nLimits: --max-bytes N (67108864), --max-members N (100000),\n        --max-name-bytes N (67108864), --max-symbols N (1000000),\n        --max-symbol-name-bytes N (67108864).\nUse -- before filenames beginning with '-'.\nDiff exits: 0 equal, 1 different or ambiguous, 2 invalid input or I/O error.\nMutation exits: 0 success, 2 invalid input or I/O error.\nThe CLI loads files into memory before applying parser limits.\n"
+  "MoonAr 0.4.0\nUsage: moonar list|inspect|check FILE [--json]\n       moonar check FILE --external [--allow-parent-paths] [--json]\n       moonar diff BEFORE AFTER [--logical] [--json]\n       moonar create OUT [FILES...] [--thin]\n       moonar add ARCHIVE FILES... [--at N]\n       moonar replace ARCHIVE INDEX FILE\n       moonar delete ARCHIVE INDEX...\n       moonar move ARCHIVE FROM TO\n       moonar rename ARCHIVE INDEX NAME\n       moonar extract ARCHIVE INDEX OUT\n       moonar convert ARCHIVE OUT\n       moonar index ARCHIVE\n       moonar --help | --version\nWrite options: --format gnu|gnu64|bsd|bsd64|darwin|darwin64 (gnu),\n               --index auto|none (auto), --output FILE, --force,\n               --preserve-metadata, --big-endian-index, --json.\nThin access: --allow-parent-paths permits external references outside the archive directory.\nMember positions are zero-based ordinary-member positions shown by list.\ninspect shows physical records; check validates metadata; --external also validates thin members.\ndiff --logical accepts regular and thin inputs and loads external contents.\nEdits retain thin storage; convert materializes thin inputs into regular archives.\nNew outputs require --force to replace an existing file; in-place edits replace atomically.\nLimits: --max-bytes N (67108864), --max-members N (100000),\n        --max-name-bytes N (67108864), --max-symbols N (1000000),\n        --max-symbol-name-bytes N (67108864).\nUse -- before filenames beginning with '-'.\nDiff exits: 0 equal, 1 different or ambiguous, 2 invalid input or I/O error.\nMutation exits: 0 success, 2 invalid input or I/O error.\nThe CLI loads files into memory before applying parser limits.\n"
 }
 
 ///|
@@ -116,8 +116,9 @@ pub fn run(
 ) -> Reply {
   let path = match request.command {
     Help => return { exit_code: 0, stdout: help(), stderr: "", }
-    Version => return { exit_code: 0, stdout: "moonar 0.3.0\n", stderr: "", }
-    Diff(before, after) => return run_diff(request, before, after, read)
+    Version => return { exit_code: 0, stdout: "moonar 0.4.0\n", stderr: "", }
+    Diff(before, after) =>
+      return run_diff(request, before, after, read, validate_path)
     Manage(options) =>
       return run_manage(request, options, read, write, validate_path, canonical)
     Inspect(path) | List(path) | Check(path) => path
@@ -127,7 +128,7 @@ pub fn run(
     Err(message) => return error_reply("IO001", message, request.json_output, 2)
   }
   if bytes.has_prefix(b"!<thin>\n"[:]) {
-    return inspect_thin(request, bytes)
+    return inspect_thin(request, path, bytes, read, validate_path)
   }
   let archive = match parse_input(request, bytes) {
     Ok(archive) => archive
@@ -165,7 +166,13 @@ pub fn run(
 }
 
 ///|
-fn inspect_thin(request : Request, bytes : Bytes) -> Reply {
+fn inspect_thin(
+  request : Request,
+  path : String,
+  bytes : Bytes,
+  read : (String) -> Result[Bytes, String],
+  validate_path : (String, String) -> Result[Unit, String],
+) -> Reply {
   let archive = match
     @ar.parse_thin(
       bytes,
@@ -191,6 +198,19 @@ fn inspect_thin(request : Request, bytes : Bytes) -> Reply {
         }
       }
   }
+  let external_bytes = if request.external {
+    match
+      archive.validate_members(
+        external_reader(path, request.allow_parent_paths, read, validate_path),
+        max_bytes=request.max_bytes,
+        allow_parent_paths=request.allow_parent_paths,
+      ) {
+      Ok(total) => Some(total)
+      Err(error) => return archive_input_error(request, path, error, 1)
+    }
+  } else {
+    None
+  }
   let text = StringBuilder()
   let mut position = 0
   for i = 0; i < archive.member_count(); i = i + 1 {
@@ -211,7 +231,14 @@ fn inspect_thin(request : Request, bytes : Bytes) -> Reply {
   {
     exit_code: 0,
     stdout: if request.json_output {
-      (if request.command is List(_) {
+      (if external_bytes is Some(total) {
+        let value = archive.to_json()
+        if value is Object(fields) {
+          fields["external_checked"] = Json(true)
+          fields["external_byte_length"] = Json(total)
+        }
+        value
+      } else if request.command is List(_) {
         list_json(archive.to_json())
       } else {
         archive.to_json()
@@ -219,6 +246,8 @@ fn inspect_thin(request : Request, bytes : Bytes) -> Reply {
       "\n"
     } else if request.command is (Inspect(_) | List(_)) {
       text.to_string()
+    } else if external_bytes is Some(total) {
+      "OK: \{archive.member_count()} thin records; external members checked, \{total} bytes.\n"
     } else {
       "OK: \{archive.member_count()} thin records, \{archive.byte_length()} container bytes\n"
     },

@@ -47,6 +47,11 @@ record. Darwin padding declared inside the payload is retained.
 Thin inspection uses `"format": "thin"`. Ordinary records have `"external": true`
 and their declared external `size`; no inline `data_offset` is exposed.
 `check` validates container/index metadata without loading external files.
+`check --external` also validates every thin external member. Successful thin JSON
+adds `external_checked: true` and `external_byte_length` (cumulative bytes, counting
+repeated references). Loading failures include the archive `input`, error code
+and the original thin member's header offset. This check does not rediscover
+object symbols or establish that the index names match actual definitions.
 
 `list --json` is a distinct selector view. It contains `schema_version`, `format`,
 `byte_length`, `index_kind: "ordinary_member"` and `members`. Only ordinary members
@@ -170,3 +175,22 @@ the reported correspondence, so inspect `ambiguities` as well.
 `diff --logical` exits 0 only when content, paired metadata/order, mappings and
 index presence match and there are no ambiguities. It can exit 0 with
 `bytes_equal=false`. No mode asserts executable, ABI or link equivalence.
+
+## Snapshot comparison
+
+`Archive.snapshot()` and `ThinArchive.snapshot(loader, ...)` produce an abstract
+`ArchiveSnapshot`. `before.compare_logical(after)` accepts any combination of
+ordinary/thin snapshots and returns `LogicalComparison` with the existing JSON
+schema. All change and ambiguity positions refer to original physical records.
+
+For thin snapshots, `bytes_equal` measures the original container bytes, while
+`content_equal` measures loaded member contents. Identical containers can have
+different external contents. `diff --logical` supports these combinations;
+physical `diff` continues to require ordinary archives. Each thin input has its
+own cumulative external byte budget, in addition to its container parser budget.
+The original parsed symbol mappings are retained, not regenerated.
+
+`cli.Request` now includes `external` and `allow_parent_paths` booleans. The query
+parser accepts `--external` only with `check`, and `--allow-parent-paths` only with
+`check --external` or `diff --logical`. Check failures in external members exit 1;
+logical comparison loading failures exit 2 and identify the archive input.
