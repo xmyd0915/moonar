@@ -7,12 +7,14 @@ pub(all) struct ThinMember {
   header_offset : Int
   size : Int
   metadata : Metadata
+  archive_member_offset : Int?
 } derive(Eq, Debug)
 
 ///|
 /// GNU thin archive metadata and validated symbol references, without file I/O.
 struct ThinArchive {
   archive : Archive
+  references : Map[Int, Int]
 } derive(Debug)
 
 ///|
@@ -55,6 +57,7 @@ pub fn ThinArchive::get_member(self : ThinArchive, index : Int) -> ThinMember? {
     header_offset: entry.header_offset,
     size: entry.size,
     metadata: entry.metadata,
+    archive_member_offset: self.references.get(index),
   })
 }
 
@@ -81,11 +84,12 @@ fn parse_thin_records(
   data : Bytes,
   max_members : Int,
   max_name_bytes : Int,
-) -> Archive raise InvalidArchive {
+) -> (Archive, Map[Int, Int]) raise InvalidArchive {
   if data.length() < 8 || data[:8] != b"!<thin>\n"[:] {
     reject("AR001", 0, "expected GNU thin archive magic")
   }
   let records : Array[Member] = []
+  let references : Map[Int, Int] = Map([])
   let pending_names : Array[(Int, Int)] = []
   let wanted_names : Map[Int, Unit] = Map([])
   let mut long_table : (Int, Int)? = None
@@ -123,28 +127,50 @@ fn parse_thin_records(
       Regular
     }
     if kind == Regular && raw_name.has_prefix(b"/"[:]) {
+      let mut separator = raw_name.length()
       for i = 1; i < raw_name.length(); i = i + 1 {
-        if raw_name[i] == b':' {
-          reject(
-            "AR011",
-            offset + i,
-            "nested archive offset references are unsupported",
-          )
+        if raw_name[i] == b':' && separator == raw_name.length() {
+          separator = i
+          continue
         }
         if raw_name[i] < b'0' || raw_name[i] > b'9' {
-          reject("AR006", offset + i, "invalid GNU name reference")
+          reject(
+            "AR006",
+            offset + i,
+            "invalid GNU thin name or archive-offset reference",
+          )
         }
       }
       let reference = number_field(
           data,
           offset + 1,
-          raw_name.length() - 1,
+          separator - 1,
           10,
           false,
           2147483647L,
         )
         .unwrap()
         .to_int()
+      if separator < raw_name.length() {
+        let target_offset = number_field(
+            data,
+            offset + separator + 1,
+            raw_name.length() - separator - 1,
+            10,
+            false,
+            2147483647L,
+          )
+          .unwrap()
+          .to_int()
+        if target_offset < 8 || target_offset % 2 != 0 {
+          reject(
+            "AR006",
+            offset + separator + 1,
+            "nested member offset must identify an aligned archive header",
+          )
+        }
+        references[records.length()] = target_offset
+      }
       pending_names.push((records.length(), reference))
       wanted_names[reference] = ()
     }
@@ -239,13 +265,14 @@ fn parse_thin_records(
     }
     total_name_bytes += entry.name.length()
   }
-  { data, records, indexes: [], }
+  ({ data, records, indexes: [], }, references)
 }
 
 ///|
 /// Parse GNU thin metadata and GNU 32/64-bit symbol indexes without loading
 /// external files. Byte limits cover this input, not referenced external files.
-/// Nested archive offset references and BSD embedded names are rejected.
+/// GNU archive-offset references are retained without I/O. BSD embedded names
+/// are not part of the GNU thin encoding and are rejected.
 pub fn parse_thin(
   input : Bytes,
   max_members? : Int = 100000,
@@ -273,11 +300,26 @@ pub fn parse_thin(
     })
   }
   try {
-    let archive = parse_thin_records(input, max_members, max_name_bytes)
+    let (archive, references) = parse_thin_records(
+      input, max_members, max_name_bytes,
+    )
+    let mut seen_index = false
+    for entry in archive.records {
+      if entry.kind == SymbolTable {
+        if seen_index {
+          reject(
+            "AR010",
+            entry.header_offset,
+            "multiple thin symbol indexes are unsupported",
+          )
+        }
+        seen_index = true
+      }
+    }
     let indexes = parse_symbol_indexes(
       archive, max_symbols, max_symbol_name_bytes,
     )
-    Ok({ archive: { ..archive, indexes, }, })
+    Ok({ archive: { ..archive, indexes, }, references, })
   } catch {
     InvalidArchive(error) => Err(error)
   }
@@ -376,44 +418,15 @@ pub fn ThinArchive::load_member(
   loader : (Bytes, Int) -> Result[Bytes, String],
   max_bytes? : Int = 67108864,
   allow_parent_paths? : Bool = false,
+  nested_limits? : NestedLimits = NestedLimits::new(),
 ) -> Result[Bytes, ParseError] {
-  if max_bytes < 0 {
-    return Err({
-      code: "AR008",
-      offset: 0,
-      message: "limits must be nonnegative",
-    })
-  }
-  let path = match self.member_path(index, allow_parent_paths~) {
-    Ok(path) => path
-    Err(error) => return Err(error)
-  }
-  let entry = self.archive.records[index]
-  if entry.size > max_bytes {
-    return Err({
-      code: "AR008",
-      offset: entry.header_offset,
-      message: "external member byte limit exceeded",
-    })
-  }
-  match loader(path, entry.size) {
-    Err(message) =>
-      Err({ code: "AR013", offset: entry.header_offset, message, })
-    Ok(bytes) =>
-      if bytes.length() > max_bytes {
-        Err({
-          code: "AR008",
-          offset: entry.header_offset,
-          message: "external member byte limit exceeded",
-        })
-      } else if bytes.length() != entry.size {
-        Err({
-          code: "AR014",
-          offset: entry.header_offset,
-          message: "external member size differs from its archive header",
-        })
-      } else {
-        Ok(bytes)
-      }
-  }
+  self
+  .resolve_member(
+    index,
+    loader,
+    max_bytes~,
+    allow_parent_paths~,
+    nested_limits~,
+  )
+  .map(entry => entry.data)
 }

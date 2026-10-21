@@ -267,3 +267,43 @@ test "SORTED indexes check name ordering in both widths" {
     assert_eq(parsed(good).symbol_indexes()[0].symbols.length(), 2)
   }
 }
+
+///|
+test "BSD sorted indexes use unsigned byte lexical order across different name lengths" {
+  for width in [4, 8] {
+    for little in [false, true] {
+      let name = if width == 4 {
+        b"__.SYMDEF SORTED"
+      } else {
+        b"__.SYMDEF_64 SORTED"
+      }
+      let header = "#1/\{name.length()}"
+      for
+        (strings, second_name, valid) in [
+          (b"aaaa\x00z\x00", 5, true),
+          (b"z\x00aaaa\x00", 2, false),
+        ] {
+        let target = 8 +
+          record(
+            header,
+            name + Bytes::make(width * 6 + strings.length(), b'\x00'),
+          ).length()
+        let body = word(width * 4, width, little) +
+          word(0, width, little) +
+          word(target, width, little) +
+          word(second_name, width, little) +
+          word(target, width, little) +
+          word(strings.length(), width, little) +
+          strings
+        let input = b"!<arch>\n" +
+          record(header, name + body) +
+          record("a.o/", b"x")
+        if valid {
+          assert_true(parse(input) is Ok(_))
+        } else {
+          assert_true(parse(input) is Err({ code: "AR009", .. }))
+        }
+      }
+    }
+  }
+}

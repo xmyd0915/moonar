@@ -30,6 +30,7 @@ fn load_diff_input(
         external_reader(path, request.allow_parent_paths, read, validate_path),
         max_bytes=request.max_bytes,
         allow_parent_paths=request.allow_parent_paths,
+        nested_limits=nested_limits(request),
       ) {
       Ok(snapshot) => Ok((snapshot, None))
       Err(error) => Err(archive_input_error(request, path, error, 2))

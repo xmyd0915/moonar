@@ -46,6 +46,9 @@ record. Darwin padding declared inside the payload is retained.
 
 Thin inspection uses `"format": "thin"`. Ordinary records have `"external": true`
 and their declared external `size`; no inline `data_offset` is exposed.
+`archive_member_offset` is null for direct references and special records; an
+integer identifies a member header in the referenced archive. Inspection retains
+the container path; resolution and logical snapshots use the final member name.
 `check` validates container/index metadata without loading external files.
 `check --external` also validates every thin external member. Successful thin JSON
 adds `external_checked: true` and `external_byte_length` (cumulative bytes, counting
@@ -68,7 +71,8 @@ replace atomically.
 Metadata values are **decimal strings or null**, not JSON numbers. This preserves
 integer values in JavaScript consumers. The header mode is octal, so header `644`
 becomes decimal string `"420"`. A blank field is null. Numeric fields reject signs,
-non-digits and internal whitespace. Sizes and offsets fit signed 32-bit integers;
+non-digits and internal whitespace, except that Microsoft COFF library timestamps
+of `-1` represent unknown time and decode to null. Sizes and offsets fit signed 32-bit integers;
 metadata is represented as signed 64-bit nonnegative values.
 
 Comparison returns `bytes_equal`, `order_changed` and `changes`. Each change has:
@@ -106,7 +110,7 @@ analyzes object-code equivalence.
 | AR008 | Invalid or exceeded resource limit |
 | AR009 | Invalid symbol index, string or member reference |
 | AR010 | Ambiguous byte order or unsupported multiple-index layout |
-| AR011–AR014 | Thin reference, path, loading or declared-size error; see WRITING.md |
+| AR011–AR015 | Thin reference, path, loading or declared-size error; see WRITING.md |
 | WR001–WR006 | Editing, metadata, budget, index policy, symbol or object error |
 | OB001–OB003 | Object structure, unsupported format or symbol discovery budget |
 | IO001 | CLI filesystem read failure; no offset |
@@ -138,8 +142,10 @@ Each symbol contains `name` (JSON: `name_display`/`name_hex`), `member_index`,
 `name_offset` and `offset_field_offset`. The last two fields locate name bytes
 and the target-offset field in the original archive. Targets must resolve to
 exact ordinary-member headers. Counts, string boundaries, termination, padding
-and SORTED name order are checked. Multiple indexes, including COFF's two linker
-members, are rejected with `AR010`.
+and SORTED name order are checked using bytewise lexical comparison. Microsoft
+COFF libraries have two leading `/` records with cross-checked mappings. Both
+records count toward resource limits, while `symbol_indexes` exposes the canonical
+second table with `format: "coff"`. Other multiple-index layouts return `AR010`.
 
 ## Matching and logical comparison
 

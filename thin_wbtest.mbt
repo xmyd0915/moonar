@@ -122,7 +122,7 @@ test "thin references resolve name boundaries and retain external special-lookin
 
 ///|
 test "thin unsupported encodings and malformed inline data fail explicitly" {
-  for name in ["/0:68", "#1/8"] {
+  for name in ["#1/8"] {
     assert_true(
       parse_thin(b"!<thin>\n" + thin_header(name, 20))
       is Err({ code: "AR011", .. }),

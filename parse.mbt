@@ -51,6 +51,50 @@ fn number_field(
 }
 
 ///|
+fn has_coff_linker_pair(data : Bytes) -> Bool {
+  if data.length() < 68 || data[8:24] != b"/               "[:] {
+    return false
+  }
+  let size = number_field(data, 56, 10, 10, false, 2147483647L) catch {
+    InvalidArchive(_) => return false
+  }
+  let size = size.unwrap().to_int()
+  if size > data.length() - 68 {
+    return false
+  }
+  if size % 2 > data.length() - 68 - size {
+    return false
+  }
+  let second = 68 + size + size % 2
+  data.length() - second >= 60 &&
+  data[second:second + 16] == b"/               "[:]
+}
+
+///|
+fn archive_timestamp(
+  data : Bytes,
+  start : Int,
+  coff : Bool,
+) -> Int64? raise InvalidArchive {
+  // Microsoft import libraries use -1 as an unknown timestamp. Preserve its
+  // semantic absence rather than treating it as a negative Unix timestamp.
+  if coff {
+    let mut first = start
+    let mut last = start + 12
+    while first < last && data[first] == b' ' {
+      first += 1
+    }
+    while last > first && data[last - 1] == b' ' {
+      last -= 1
+    }
+    if data[first:last] == b"-1"[:] {
+      return None
+    }
+  }
+  number_field(data, start, 12, 10, true, 0x7fffffffffffffffL)
+}
+
+///|
 fn parse_records(
   data : Bytes,
   max_members : Int,
@@ -62,6 +106,7 @@ fn parse_records(
   if data.length() < 8 || data[:8] != b"!<arch>\n"[:] {
     reject("AR001", 0, "expected ar archive magic")
   }
+  let coff_header = has_coff_linker_pair(data)
   let records : Array[Member] = []
   let pending_names : Array[(Int, Int)] = []
   let wanted_names : Map[Int, Unit] = Map([])
@@ -118,14 +163,7 @@ fn parse_records(
         reject("AR006", offset, "NUL inside member name")
       }
     }
-    let timestamp = number_field(
-      data,
-      offset + 16,
-      12,
-      10,
-      true,
-      0x7fffffffffffffffL,
-    )
+    let timestamp = archive_timestamp(data, offset + 16, coff_header)
     let uid = number_field(data, offset + 28, 6, 10, true, 0x7fffffffffffffffL)
     let gid = number_field(data, offset + 34, 6, 10, true, 0x7fffffffffffffffL)
     let mode = number_field(data, offset + 40, 8, 8, true, 0x7fffffffffffffffL)
@@ -180,8 +218,19 @@ fn parse_records(
     })
     offset = end + padding
   }
+  let coff = records.length() >= 2 &&
+    records[0].name == b"/" &&
+    records[1].name == b"/" &&
+    records[1].size >= 8
   let long_names = match long_table {
-    Some((start, size)) => Some(gnu_names(data, start, size, wanted_names))
+    Some((start, size)) =>
+      Some(
+        if coff {
+          coff_names(data, start, size, wanted_names)
+        } else {
+          gnu_names(data, start, size, wanted_names)
+        },
+      )
     None => None
   }
   for (index, reference) in pending_names {

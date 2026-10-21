@@ -68,6 +68,7 @@ pub fn ThinArchive::to_json(self : ThinArchive) -> Json {
         "header_offset": Json(entry.header_offset),
         "size": Json(entry.size),
         "external": Json(entry.kind == Regular),
+        "archive_member_offset": index_value(entry.archive_member_offset),
         "metadata": Json::object({
           "timestamp": metadata_value(entry.metadata.timestamp),
           "uid": metadata_value(entry.metadata.uid),

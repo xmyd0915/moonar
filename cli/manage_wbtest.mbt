@@ -29,6 +29,79 @@ fn contents(bytes : Bytes) -> Array[(Bytes, Bytes)] {
 }
 
 ///|
+test "nested thin CLI creates from archives then resolves edits and protects transitive sources" {
+  let base = @ar.ArchiveBuilder::from_members([
+      @ar.WriteMember::new(b"one.o", b"abc"),
+      @ar.WriteMember::new(b"two.o", b"defg"),
+    ])
+    .unwrap()
+    .write()
+    .unwrap()
+  let files : Map[String, Bytes] = { "dir/base.a": base }
+  assert_eq(
+    execute(
+      ["create", "outer.a", "dir/base.a", "--thin", "--index", "none"],
+      files,
+    ).exit_code,
+    0,
+  )
+  let archive = @ar.parse_thin(files["outer.a"]).unwrap()
+  assert_eq(archive.get_member(1).unwrap().archive_member_offset, Some(8))
+  assert_eq(execute(["check", "outer.a", "--external"], files).exit_code, 0)
+  assert_eq(execute(["extract", "outer.a", "1", "copy"], files).exit_code, 0)
+  assert_eq(files["copy"], b"defg")
+  assert_eq(
+    execute(["move", "outer.a", "1", "0", "--index", "none"], files).exit_code,
+    0,
+  )
+  assert_eq(
+    execute(["convert", "outer.a", "flat.a", "--index", "none"], files).exit_code,
+    0,
+  )
+  assert_eq(contents(files["flat.a"]), [(b"two.o", b"defg"), (b"one.o", b"abc")])
+  assert_eq(
+    execute(["diff", "outer.a", "flat.a", "--logical"], files).exit_code,
+    0,
+  )
+  let direct = @ar.ThinArchiveBuilder::from_members([
+      @ar.ThinWriteMember::new(b"leaf.o", 3),
+    ])
+    .unwrap()
+    .write()
+    .unwrap()
+  let offset = @ar.parse_thin(direct).unwrap().get_member(1).unwrap().header_offset
+  files["dir/inner.a"] = direct
+  files["dir/leaf.o"] = b"abc"
+  files["chain.a"] = @ar.ThinArchiveBuilder::from_members([
+      @ar.ThinWriteMember::new(
+        b"dir/inner.a",
+        3,
+        archive_member_offset=Some(offset),
+      ),
+    ])
+    .unwrap()
+    .write()
+    .unwrap()
+  for
+    args in [
+      ["extract", "chain.a", "0", "dir/leaf.o", "--force"],
+      ["convert", "chain.a", "dir/leaf.o", "--index", "none", "--force"],
+      [
+        "delete", "chain.a", "0", "--output", "dir/leaf.o", "--index", "none", "--force",
+      ],
+    ] {
+    assert_eq(execute(args, files).exit_code, 2)
+    assert_eq(files["dir/leaf.o"], b"abc")
+  }
+  files.remove("dir/inner.a") |> ignore
+  assert_eq(
+    execute(["delete", "chain.a", "0", "--index", "none"], files).exit_code,
+    0,
+  )
+  assert_eq(@ar.parse_thin(files["chain.a"]).unwrap().member_count(), 0)
+}
+
+///|
 test "editing CLI operates on duplicate members and preserves input on failure" {
   let files : Map[String, Bytes] = {
     "a/same": b"first",

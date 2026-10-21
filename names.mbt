@@ -43,6 +43,40 @@ fn gnu_names(
 }
 
 ///|
+fn coff_names(
+  data : Bytes,
+  start : Int,
+  size : Int,
+  wanted : Map[Int, Unit],
+) -> Map[Int, Bytes] raise InvalidArchive {
+  let result : Map[Int, Bytes] = Map([])
+  let end = start + size
+  let mut cursor = start
+  while cursor < end {
+    if data[cursor] == b'\x00' {
+      for i = cursor; i < end; i = i + 1 {
+        if data[i] != b'\x00' {
+          reject("AR006", i, "invalid COFF long-name padding")
+        }
+      }
+      break
+    }
+    let first = cursor
+    while cursor < end && data[cursor] != b'\x00' {
+      cursor += 1
+    }
+    if cursor == end {
+      reject("AR006", first, "unterminated COFF long name")
+    }
+    if wanted.get(first - start) is Some(_) {
+      result[first - start] = data[first:cursor].to_owned()
+    }
+    cursor += 1
+  }
+  result
+}
+
+///|
 fn member_kind(name : Bytes) -> MemberKind {
   if name == b"//" {
     NameTable

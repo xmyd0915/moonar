@@ -313,7 +313,7 @@ fn load_reference(
   request : Request,
   read : (String) -> Result[Bytes, String],
   validate_path : (String, String) -> Result[Unit, String],
-) -> Bytes raise ManageFailure {
+) -> @ar.WriteMember raise ManageFailure {
   // Use the public path/size policy even for newly created plans.
   let probe = manage_written(@ar.ThinArchiveBuilder::from_members([entry]))
   let bytes = manage_written(probe.write(max_bytes=request.max_bytes))
@@ -325,32 +325,15 @@ fn load_reference(
       break
     }
   }
-  let name = path_text(
-    manage_parsed(
-      archive.member_path(ordinary, allow_parent_paths=options.allow_parent),
+  manage_parsed(
+    archive.resolve_member(
+      ordinary,
+      external_reader(archive_path, options.allow_parent, read, validate_path),
+      max_bytes=request.max_bytes,
+      allow_parent_paths=options.allow_parent,
+      nested_limits=nested_limits(request),
     ),
   )
-  let base = path_dir(archive_path)
-  let path = joined_path(base, name)
-  if clean_path(path) == clean_path(archive_path) {
-    manage_fail(
-      "IO003", "thin member cannot reference the archive being written",
-    )
-  }
-  if !options.allow_parent {
-    match validate_path(base, path) {
-      Ok(_) => ()
-      Err(error) => manage_fail("IO003", error)
-    }
-  }
-  let payload = read_managed(path, request, read)
-  if payload.length() != entry.size {
-    manage_fail(
-      "AR014",
-      "\{path}: external size differs from the archive header",
-    )
-  }
-  payload
 }
 
 ///|
@@ -376,14 +359,15 @@ fn run_manage(
     let mut regular = @ar.ArchiveBuilder::new()
     let mut thin_plan = @ar.ThinArchiveBuilder::new()
     let mut is_thin = options.thin
+    let mut original_thin : @ar.ThinArchive? = None
     let protected_members : Array[String] = []
     if operation != "create" {
       let input = read_managed(source, request, read)
       is_thin = input.has_prefix(b"!<thin>\n"[:])
       if is_thin {
-        thin_plan = manage_written(
-          parse_managed_thin(input, request).edit(drop_symbol_indexes=true),
-        )
+        let archive = parse_managed_thin(input, request)
+        original_thin = Some(archive)
+        thin_plan = manage_written(archive.edit(drop_symbol_indexes=true))
         for entry in thin_plan.members() {
           protected_members.push(
             protected_thin_path(source, entry.name, canonical),
@@ -397,16 +381,35 @@ fn run_manage(
     }
     // Positional edits select ordinary members, so a name table never shifts the selection.
     if operation == "create" || operation == "add" {
-      let mut position = options.at.unwrap_or(
+      let position = options.at.unwrap_or(
         if is_thin {
           thin_plan.member_count()
         } else {
           regular.member_count()
         },
       )
-      let mut total_payload = regular
-        .members()
-        .fold(init=0, fn(total, entry) { total + entry.data.length() })
+      let old_regular = regular.members()
+      let old_thin = thin_plan.members()
+      let count = if is_thin { old_thin.length() } else { old_regular.length() }
+      if position < 0 || position > count {
+        manage_fail("WR001", "insert position is outside the archive")
+      }
+      if count > request.max_members ||
+        args.length() - 1 > request.max_members - count {
+        manage_fail("WR003", "archive entry limit exceeded")
+      }
+      let next_regular : Array[@ar.WriteMember] = []
+      let next_thin : Array[@ar.ThinWriteMember] = []
+      for i in 0..<position {
+        if is_thin {
+          next_thin.push(old_thin[i])
+        } else {
+          next_regular.push(old_regular[i])
+        }
+      }
+      let mut total_payload = old_regular.fold(init=0, fn(total, entry) {
+        total + entry.data.length()
+      })
       for i = 1; i < args.length(); i = i + 1 {
         let payload = read_managed(args[i], request, read)
         if is_thin {
@@ -417,25 +420,64 @@ fn run_manage(
               "IO003", "thin member cannot refer to the output archive",
             )
           }
-          thin_plan = manage_written(
-            thin_plan.insert(
-              position,
+          if payload.has_prefix(b"!<arch>\n"[:]) {
+            let archive = parse_managed(payload, request)
+            for j in 0..<archive.member_count() {
+              let entry = archive.get_member(j).unwrap()
+              if entry.kind == @ar.Regular {
+                next_thin.push(
+                  @ar.ThinWriteMember::new(
+                    @utf8.encode(name),
+                    entry.size,
+                    metadata=entry.metadata,
+                    archive_member_offset=Some(entry.header_offset),
+                  ),
+                )
+              }
+            }
+          } else if payload.has_prefix(b"!<thin>\n"[:]) {
+            let archive = parse_managed_thin(payload, request)
+            for
+              entry in manage_written(archive.edit(drop_symbol_indexes=true)).members() {
+              let path = joined_path(path_dir(args[i]), path_text(entry.name))
+              next_thin.push({
+                ..entry,
+                name: @utf8.encode(
+                  resolved_reference(path_dir(source), path, canonical),
+                ),
+              })
+            }
+          } else {
+            next_thin.push(
               @ar.ThinWriteMember::new(@utf8.encode(name), payload.length()),
-            ),
-          )
+            )
+          }
+          if next_thin.length() > request.max_members - (count - position) {
+            manage_fail("WR003", "archive entry limit exceeded")
+          }
         } else {
           if payload.length() > request.max_bytes - total_payload {
             manage_fail("WR003", "total member data exceed --max-bytes")
           }
           total_payload += payload.length()
-          regular = manage_written(
-            regular.insert(
-              position,
-              @ar.WriteMember::new(@utf8.encode(path_name(args[i])), payload),
-            ),
+          next_regular.push(
+            @ar.WriteMember::new(@utf8.encode(path_name(args[i])), payload),
           )
         }
-        position += 1
+      }
+      for i = position; i < count; i = i + 1 {
+        if is_thin {
+          next_thin.push(old_thin[i])
+        } else {
+          next_regular.push(old_regular[i])
+        }
+      }
+      if is_thin {
+        thin_plan = manage_written(
+          @ar.ThinArchiveBuilder::from_members(next_thin),
+        )
+      } else {
+        regular = manage_written(@ar.ArchiveBuilder::from_members(next_regular))
       }
     } else if operation == "replace" {
       let index = limit_number(args[1]).unwrap()
@@ -464,22 +506,38 @@ fn run_manage(
         )
       }
     } else if operation == "delete" {
-      let positions : Array[Int] = []
+      let positions : Map[Int, Unit] = Map([])
+      let count = if is_thin {
+        thin_plan.member_count()
+      } else {
+        regular.member_count()
+      }
       for i = 1; i < args.length(); i = i + 1 {
         let index = limit_number(args[i]).unwrap()
-        if positions.contains(index) {
+        if index < 0 || index >= count {
+          manage_fail("WR001", "deletion index is outside the archive")
+        }
+        if positions.get(index) is Some(_) {
           manage_fail("WR001", "duplicate deletion index")
         }
-        positions.push(index)
+        positions[index] = ()
       }
-      positions.sort()
-      positions.rev_in_place()
-      for index in positions {
-        if is_thin {
-          thin_plan = manage_written(thin_plan.remove(index))
-        } else {
-          regular = manage_written(regular.remove(index))
+      if is_thin {
+        let kept : Array[@ar.ThinWriteMember] = []
+        for index, entry in thin_plan.members() {
+          if positions.get(index) is None {
+            kept.push(entry)
+          }
         }
+        thin_plan = manage_written(@ar.ThinArchiveBuilder::from_members(kept))
+      } else {
+        let kept : Array[@ar.WriteMember] = []
+        for index, entry in regular.members() {
+          if positions.get(index) is None {
+            kept.push(entry)
+          }
+        }
+        regular = manage_written(@ar.ArchiveBuilder::from_members(kept))
       }
     } else if operation == "move" {
       let from = limit_number(args[1]).unwrap()
@@ -515,6 +573,38 @@ fn run_manage(
       }
     }
     let destination_identity = output_path_identity(destination, canonical)
+    // Resolve container dependencies before any output write, including edits
+    // that do not load payloads. Removing broken references in place stays possible.
+    let source_identity = output_path_identity(source, canonical)
+    let plans : Array[@ar.ThinArchive] = []
+    if original_thin is Some(archive) &&
+      !same_path_identity(source_identity, destination_identity) &&
+      manage_written(archive.edit(drop_symbol_indexes=true))
+      .members()
+      .any(e => e.archive_member_offset is Some(_)) {
+      plans.push(archive)
+    }
+    if is_thin &&
+      thin_plan.members().any(e => e.archive_member_offset is Some(_)) {
+      plans.push(
+        parse_managed_thin(
+          manage_written(thin_plan.write(max_bytes=request.max_bytes)),
+          request,
+        ),
+      )
+    }
+    for archive in plans {
+      for
+        path in manage_parsed(
+          archive.member_sources(
+            external_reader(source, options.allow_parent, read, validate_path),
+            allow_parent_paths=options.allow_parent,
+            nested_limits=nested_limits(request),
+          ),
+        ) {
+        protected_members.push(protected_thin_path(source, path, canonical))
+      }
+    }
     if operation == "extract" &&
       same_path_identity(
         destination_identity,
@@ -535,7 +625,7 @@ fn run_manage(
           guard thin_plan.members().get(index) is Some(entry) else {
             manage_fail("WR001", "member index is outside the archive")
           }
-          load_reference(source, entry, options, request, read, validate_path)
+          load_reference(source, entry, options, request, read, validate_path).data
         } else {
           guard regular.members().get(index) is Some(entry) else {
             manage_fail("WR001", "member index is outside the archive")
@@ -557,23 +647,19 @@ fn run_manage(
         manage_fail("WR005", "thin output requires gnu or gnu64")
       }
       if operation == "convert" || options.index_mode == "auto" {
-        let loaded : Array[@ar.WriteMember] = []
-        let mut total = 0
-        for entry in thin_plan.members() {
-          if entry.size > request.max_bytes - total {
-            manage_fail(
-              "AR008", "total external member bytes exceed --max-bytes",
-            )
-          }
-          let payload = load_reference(
-            source, entry, options, request, read, validate_path,
-          )
-          total += payload.length()
-          loaded.push(
-            @ar.WriteMember::new(entry.name, payload, metadata=entry.metadata),
-          )
-        }
-        regular = manage_written(@ar.ArchiveBuilder::from_members(loaded))
+        let archive = parse_managed_thin(
+          manage_written(thin_plan.write(max_bytes=request.max_bytes)),
+          request,
+        )
+        regular = manage_parsed(
+          archive.materialize(
+            external_reader(source, options.allow_parent, read, validate_path),
+            drop_symbol_indexes=true,
+            allow_parent_paths=options.allow_parent,
+            max_bytes=request.max_bytes,
+            nested_limits=nested_limits(request),
+          ),
+        )
       }
       if operation == "convert" {
         is_thin = false

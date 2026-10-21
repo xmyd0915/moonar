@@ -303,6 +303,42 @@ def verify_macho(exe, llvm, clang, zig, cwd):
         print("All four BSD/Darwin Mach-O archives linked successfully; execution requires macOS")
 
 
+def verify_nested(exe, ar, nm, cc, llvm, cwd):
+    run([ar, "rcsD", "container.a", "alpha.o", "beta.o"], cwd)
+    run([ar, "rcsDT", "nested-reference.a", "container.a"], cwd)
+    entries = regular(inspect(exe, cwd, "nested-reference.a"))
+    assert all(item["archive_member_offset"] is not None for item in entries)
+    run([exe, "check", "nested-reference.a", "--external"], cwd)
+    run([exe, "extract", "nested-reference.a", 1, "nested-extracted.o"], cwd)
+    assert (cwd / "nested-extracted.o").read_bytes() == (cwd / "beta.o").read_bytes()
+    run([exe, "convert", "nested-reference.a", "nested-materialized.a"], cwd)
+    run([exe, "diff", "nested-reference.a", "nested-materialized.a", "--logical"], cwd)
+    link_run(cc, cwd, "nested-materialized.a", 42, "nested-materialized")
+    if llvm:
+        assert run([llvm, "t", "nested-materialized.a"], cwd).splitlines() == [b"alpha.o", b"beta.o"]
+    # The CLI creates GNU archive-offset records for regular archives and
+    # flattens thin archive inputs while retaining their target offsets.
+    run([exe, "create", "nested-created.a", "container.a", "--thin"], cwd)
+    run([exe, "diff", "nested-created.a", "nested-reference.a", "--logical"], cwd)
+    run([exe, "create", "nested-flattened.a", "nested-created.a", "--thin"], cwd)
+    link_run(cc, cwd, "nested-flattened.a", 42, "nested-flattened")
+    saved = (cwd / "container.a").read_bytes()
+    assert_error(exe, cwd, ["convert", "nested-created.a", "container.a", "--force"], "IO003")
+    assert (cwd / "container.a").read_bytes() == saved
+    for limits in (["--max-depth", 0], ["--max-archive-bytes", len(saved) - 1]):
+        assert_error(exe, cwd, ["convert", "nested-created.a", "limited.a", *limits], "AR008")
+        assert not (cwd / "limited.a").exists()
+    run([exe, "move", "nested-created.a", 1, 0], cwd)
+    run([exe, "index", "nested-created.a"], cwd)
+    assert b"moon_beta in beta.o" in run([nm, "--print-armap", "nested-created.a"], cwd)
+    link_run(cc, cwd, "nested-created.a", 42, "nested-edited")
+    run([exe, "index", "nested-created.a", "--output", "relocated/nested.a"], cwd)
+    run([exe, "check", "relocated/nested.a", "--external", "--allow-parent-paths"], cwd)
+    run([exe, "convert", "relocated/nested.a", "nested-rebased.a", "--allow-parent-paths"], cwd)
+    link_run(cc, cwd, "nested-rebased.a", 42, "nested-rebased")
+    print("GNU nested thin read/write/edit/rebase/materialize, independent linking and limits: OK")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moonar", required=True)
@@ -325,6 +361,7 @@ def main():
         verify_formats(exe, args.ar, args.nm, args.cc, args.llvm_ar, cwd)
         verify_duplicates_and_errors(exe, args.ar, args.llvm_ar, cwd)
         verify_thin(exe, args.ar, args.nm, args.cc, args.llvm_ar, cwd)
+        verify_nested(exe, args.ar, args.nm, args.cc, args.llvm_ar, cwd)
         verify_macho(exe, args.llvm_ar, args.clang, args.zig, cwd)
 
 

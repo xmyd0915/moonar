@@ -5,6 +5,7 @@ pub(all) struct ThinWriteMember {
   name : Bytes
   size : Int
   metadata : Metadata
+  archive_member_offset : Int?
 } derive(Eq, Debug)
 
 ///|
@@ -17,8 +18,9 @@ pub fn ThinWriteMember::new(
     gid: Some(0L),
     mode: Some(420L),
   },
+  archive_member_offset? : Int? = None,
 ) -> ThinWriteMember {
-  { name, size, metadata, }
+  { name, size, metadata, archive_member_offset, }
 }
 
 ///|
@@ -38,6 +40,14 @@ fn thin_write_member_valid(
   entry : ThinWriteMember,
   index : Int,
 ) -> Unit raise InvalidWrite {
+  if entry.archive_member_offset is Some(offset) &&
+    (offset < 8 || offset % 2 != 0) {
+    write_reject(
+      "WR001",
+      Some(index),
+      "nested member offset must identify an aligned archive header",
+    )
+  }
   if entry.size < 0 {
     write_reject(
       "WR001",
@@ -191,10 +201,15 @@ pub fn ThinArchive::edit(
     })
   }
   let members : Array[ThinWriteMember] = []
-  for entry in self.archive.records {
+  for index, entry in self.archive.records {
     if entry.kind == Regular {
       members.push(
-        ThinWriteMember::new(entry.name, entry.size, metadata=entry.metadata),
+        ThinWriteMember::new(
+          entry.name,
+          entry.size,
+          metadata=entry.metadata,
+          archive_member_offset=self.references.get(index),
+        ),
       )
     }
   }
@@ -212,14 +227,8 @@ pub fn ThinArchive::materialize(
   drop_symbol_indexes? : Bool = false,
   allow_parent_paths? : Bool = false,
   max_bytes? : Int = 67108864,
+  nested_limits? : NestedLimits = NestedLimits::new(),
 ) -> Result[ArchiveBuilder, ParseError] {
-  if max_bytes < 0 {
-    return Err({
-      code: "AR008",
-      offset: 0,
-      message: "limits must be nonnegative",
-    })
-  }
   if !self.archive.indexes.is_empty() && !drop_symbol_indexes {
     return Err({
       code: "AR011",
@@ -227,55 +236,27 @@ pub fn ThinArchive::materialize(
       message: "materialization requires drop_symbol_indexes=true and fresh symbol discovery when writing",
     })
   }
-  let paths : Array[(Int, Bytes)] = []
-  let mut total = 0
-  for index, entry in self.archive.records {
-    if entry.kind == Regular {
-      let path = match self.member_path(index, allow_parent_paths~) {
-        Ok(path) => path
-        Err(error) => return Err(error)
-      }
-      if entry.size > max_bytes - total {
-        return Err({
-          code: "AR008",
-          offset: entry.header_offset,
-          message: "total external member byte limit exceeded",
-        })
-      }
-      // Ensure the target regular format can represent every name before I/O.
-      write_member_valid(
-        WriteMember::new(entry.name, b"", metadata=entry.metadata),
-        index,
-      ) catch {
-        InvalidWrite(error) =>
-          return Err({
-            code: "AR011",
-            offset: entry.header_offset,
-            message: error.message,
-          })
-      }
-      total += entry.size
-      paths.push((index, path))
+  try {
+    let (paths, _total) = thin_load_plan(self, max_bytes, allow_parent_paths)
+    let context = nested_context(
+      loader, allow_parent_paths, nested_limits, max_bytes,
+    )
+    let members : Array[WriteMember] = []
+    for (index, path) in paths {
+      let entry = self.archive.records[index]
+      members.push(
+        context.resolve(
+          entry,
+          self.references.get(index),
+          path,
+          entry.header_offset,
+        ),
+      )
     }
+    Ok({ members, })
+  } catch {
+    InvalidArchive(error) => Err(error)
   }
-  let members : Array[WriteMember] = []
-  for (index, path) in paths {
-    let entry = self.archive.records[index]
-    let bytes = match loader(path, entry.size) {
-      Err(message) =>
-        return Err({ code: "AR013", offset: entry.header_offset, message, })
-      Ok(bytes) => bytes
-    }
-    if bytes.length() != entry.size {
-      return Err({
-        code: "AR014",
-        offset: entry.header_offset,
-        message: "external member size differs from its archive header",
-      })
-    }
-    members.push(WriteMember::new(entry.name, bytes, metadata=entry.metadata))
-  }
-  Ok({ members, })
 }
 
 ///|
@@ -340,6 +321,19 @@ pub fn ThinArchiveBuilder::write(
           max_bytes,
           Some(index),
           "archive byte limit exceeded",
+        )
+      }
+    }
+    for index, entry in self.members {
+      let name = thin_reference_name(
+        name_offsets[entry.name],
+        entry.archive_member_offset,
+      )
+      if name.length() > 16 {
+        write_reject(
+          "WR001",
+          Some(index),
+          "GNU thin name and archive offsets exceed the header name field",
         )
       }
     }
@@ -503,7 +497,10 @@ pub fn ThinArchiveBuilder::write(
     for entry in self.members {
       write_header(
         output,
-        @utf8.encode("/\{name_offsets[entry.name]}"),
+        thin_reference_name(
+          name_offsets[entry.name],
+          entry.archive_member_offset,
+        ),
         if metadata == Deterministic {
           deterministic
         } else {
@@ -526,3 +523,13 @@ pub extend ThinWriteMember with Debug::{to_repr}
 
 ///|
 pub extend ThinArchiveBuilder with Debug::{to_repr}
+
+///|
+fn thin_reference_name(name_offset : Int, member_offset : Int?) -> Bytes {
+  @utf8.encode(
+    match member_offset {
+      Some(offset) => "/\{name_offset}:\{offset}"
+      None => "/\{name_offset}"
+    },
+  )
+}

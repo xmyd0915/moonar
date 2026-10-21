@@ -7,6 +7,7 @@ pub(all) enum WriteFormat {
   Bsd64
   Darwin
   Darwin64
+  Coff
 } derive(Eq, Debug)
 
 ///|
@@ -362,7 +363,7 @@ fn write_padding(output : @buffer.Buffer, size : Int) -> Unit {
 ///|
 fn write_bsd_format(format : WriteFormat) -> Bool {
   match format {
-    Gnu | Gnu64 => false
+    Gnu | Gnu64 | Coff => false
     Bsd | Bsd64 | Darwin | Darwin64 => true
   }
 }
@@ -375,7 +376,7 @@ fn write_darwin_format(format : WriteFormat) -> Bool {
 ///|
 fn write_index_width(format : WriteFormat) -> Int {
   match format {
-    Gnu | Bsd | Darwin => 4
+    Gnu | Bsd | Darwin | Coff => 4
     Gnu64 | Bsd64 | Darwin64 => 8
   }
 }
@@ -428,6 +429,12 @@ pub fn ArchiveBuilder::write(
   max_symbols? : Int = 1000000,
   max_symbol_name_bytes? : Int = 67108864,
 ) -> Result[Bytes, WriteError] {
+  if format == Coff {
+    return write_coff(
+      self, metadata, symbols, max_bytes, max_members, max_name_bytes, max_symbols,
+      max_symbol_name_bytes,
+    )
+  }
   try {
     let bsd = write_bsd_format(format)
     let darwin = write_darwin_format(format)

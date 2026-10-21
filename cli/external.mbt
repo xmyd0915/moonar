@@ -57,3 +57,15 @@ fn external_reader(
     }
   }
 }
+
+///|
+fn nested_limits(request : Request) -> @ar.NestedLimits {
+  @ar.NestedLimits::new(
+    max_bytes=request.max_archive_bytes,
+    max_depth=request.max_depth,
+    max_members=request.max_members,
+    max_name_bytes=request.max_name_bytes,
+    max_symbols=request.max_symbols,
+    max_symbol_name_bytes=request.max_symbol_name_bytes,
+  )
+}

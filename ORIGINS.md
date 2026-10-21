@@ -22,7 +22,9 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
 - [LLVM MachO.h](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/include/llvm/BinaryFormat/MachO.h)：
   Mach-O 对象、加载命令与符号标志的格式定义。
 - [Microsoft PE/COFF 格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)：
-  COFF 对象头、节、符号、字符串及辅助记录。
+  COFF 对象头、节、符号、字符串、辅助记录、双 linker-member 库与短导入对象。
+- [LLVM 18.1.3 COFF.h](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.3/llvm/include/llvm/BinaryFormat/COFF.h)：
+  bigobj 标识、扩展节号、符号大小和短导入对象字段定义。
 
 实现所覆盖的格式和限制见 [README](README.md)。
 
@@ -34,6 +36,7 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
 
 以上依赖由 MoonBit 工具链解析，不将依赖源码复制进本仓库。
 GNU binutils、LLVM 和 Python 作为独立验证程序运行，源码和二进制均不随项目分发。
+Windows 专项验证另调用本机 MSVC 编译、归档、链接和运行自编写的 C 样本，不分发工具链。
 CI 使用固定提交的 GitHub Actions 和固定版本的 MoonBit 工具链。
 
 ## 示例与测试数据

@@ -54,10 +54,14 @@ fn thin_load_bytes(
   entry : Member,
   path : Bytes,
   loader : (Bytes, Int) -> Result[Bytes, String],
+  max_bytes? : Int = 2147483647,
 ) -> Bytes raise InvalidArchive {
   let bytes = match loader(path, entry.size) {
     Ok(bytes) => bytes
     Err(message) => reject("AR013", entry.header_offset, message)
+  }
+  if bytes.length() > max_bytes {
+    reject("AR008", entry.header_offset, "external member byte limit exceeded")
   }
   if bytes.length() != entry.size {
     reject(
@@ -78,11 +82,23 @@ pub fn ThinArchive::validate_members(
   loader : (Bytes, Int) -> Result[Bytes, String],
   max_bytes? : Int = 67108864,
   allow_parent_paths? : Bool = false,
+  nested_limits? : NestedLimits = NestedLimits::new(),
 ) -> Result[Int, ParseError] {
   try {
     let (paths, total) = thin_load_plan(self, max_bytes, allow_parent_paths)
+    let context = nested_context(
+      loader, allow_parent_paths, nested_limits, max_bytes,
+    )
     for (index, path) in paths {
-      ignore(thin_load_bytes(self.archive.records[index], path, loader))
+      let entry = self.archive.records[index]
+      ignore(
+        context.resolve(
+          entry,
+          self.references.get(index),
+          path,
+          entry.header_offset,
+        ),
+      )
     }
     Ok(total)
   } catch {
@@ -100,20 +116,33 @@ pub fn ThinArchive::snapshot(
   loader : (Bytes, Int) -> Result[Bytes, String],
   max_bytes? : Int = 67108864,
   allow_parent_paths? : Bool = false,
+  nested_limits? : NestedLimits = NestedLimits::new(),
 ) -> Result[ArchiveSnapshot, ParseError] {
   try {
     let (paths, total) = thin_load_plan(self, max_bytes, allow_parent_paths)
     if total > 2147483647 - self.archive.data.length() {
       reject("AR008", 0, "snapshot byte length exceeds the supported range")
     }
+    let context = nested_context(
+      loader, allow_parent_paths, nested_limits, max_bytes,
+    )
     let data = @buffer.Buffer(size_hint=self.archive.data.length() + total)
     data.write_bytes(self.archive.data[:])
     let records = self.archive.records.copy()
     for (index, path) in paths {
       let entry = records[index]
-      let bytes = thin_load_bytes(entry, path, loader)
-      records[index] = { ..entry, data_offset: data.length(), }
-      data.write_bytes(bytes[:])
+      let resolved = context.resolve(
+        entry,
+        self.references.get(index),
+        path,
+        entry.header_offset,
+      )
+      records[index] = {
+        ..entry,
+        name: resolved.name,
+        data_offset: data.length(),
+      }
+      data.write_bytes(resolved.data[:])
     }
     // This private view is used only by the comparison engine. It is never
     // exposed as an Archive or serialized as a physical ordinary archive.

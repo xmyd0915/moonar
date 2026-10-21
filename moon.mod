@@ -1,6 +1,6 @@
 name = "xmyd0915/moonar"
 
-version = "0.4.0"
+version = "0.5.0"
 
 readme = "README.md"
 
@@ -12,7 +12,7 @@ keywords = [ "ar", "archive", "static-library", "binary", "diff" ]
 
 preferred_target = "native"
 
-description = "Read, create, edit and compare Unix ar archives in MoonBit"
+description = "Create, edit and compare ar, GNU thin and Microsoft COFF libraries in MoonBit"
 
 import {
   "moonbitlang/x@0.5.5",

@@ -229,7 +229,7 @@ fn bsd_symbol_candidate(
   }
   if entry.name == b"__.SYMDEF SORTED" || entry.name == b"__.SYMDEF_64 SORTED" {
     for n = 1; n < symbols.length(); n = n + 1 {
-      if symbols[n - 1].name > symbols[n].name {
+      if symbols[n - 1].name.lexical_compare(symbols[n].name) > 0 {
         reject(
           "AR009",
           symbols[n].name_offset,
@@ -328,11 +328,36 @@ fn parse_symbol_indexes(
       tables.push(i)
     }
   }
+  if tables == [0, 1] &&
+    archive.records[0].name == b"/" &&
+    archive.records[1].name == b"/" &&
+    archive.records[1].size >= 8 {
+    let first = gnu_symbol_index(archive, 0, headers, max_symbols, max_names)
+    let name_bytes = first.symbols.fold(init=0, fn(total, symbol) {
+      total + symbol.name.length()
+    })
+    let second = coff_symbol_index(
+      archive,
+      headers,
+      max_symbols - first.symbols.length(),
+      max_names - name_bytes,
+    )
+    if index_mappings(first) != index_mappings(second) {
+      reject(
+        "AR009",
+        archive.records[1].data_offset,
+        "COFF linker members disagree on symbol targets",
+      )
+    }
+    // The second table is the canonical map; exposing both would double every
+    // definition when comparing this archive with a single-index encoding.
+    return [second]
+  }
   if tables.length() > 1 {
     reject(
       "AR010",
       archive.records[tables[1]].header_offset,
-      "multiple symbol indexes, including COFF linker members, are unsupported",
+      "unsupported multiple symbol-index layout",
     )
   }
   tables.map(index => {

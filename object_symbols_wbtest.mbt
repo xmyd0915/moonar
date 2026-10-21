@@ -483,10 +483,13 @@ test "recognized unsupported formats and broken object signatures cannot become 
   for
     data in [
       b"BC\xc0\xde", b"\xde\xc0\x17\x0b", b"\xca\xfe\xba\xbe", b"\x00asm", b"!<arch>\n",
-      b"!<thin>\n", b"\x00\x00\xff\xff",
+      b"!<thin>\n",
     ] {
     assert_true(symbols_from_object(data) is Err({ code: "OB002", .. }))
   }
+  assert_true(
+    symbols_from_object(b"\x00\x00\xff\xff") is Err({ code: "OB001", .. }),
+  )
   assert_eq(object_names(b"ordinary text"), [])
   assert_eq(object_names(b""), [])
   assert_true(symbols_from_object(b"\x7fELF") is Err({ code: "OB001", .. }))

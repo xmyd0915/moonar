@@ -27,6 +27,8 @@ pub(all) struct Request {
   max_symbol_name_bytes : Int
   external : Bool
   allow_parent_paths : Bool
+  max_archive_bytes : Int
+  max_depth : Int
 }
 
 ///|
@@ -74,6 +76,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       max_symbol_name_bytes: 67108864,
       external: false,
       allow_parent_paths: false,
+      max_archive_bytes: 67108864,
+      max_depth: 16,
     })
   }
   if args == ["--version"] {
@@ -88,6 +92,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       max_symbol_name_bytes: 67108864,
       external: false,
       allow_parent_paths: false,
+      max_archive_bytes: 67108864,
+      max_depth: 16,
     })
   }
   if args.is_empty() ||
@@ -106,6 +112,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
   let mut max_name_bytes = 67108864
   let mut max_symbols = 1000000
   let mut max_symbol_name_bytes = 67108864
+  let mut max_archive_bytes = 67108864
+  let mut max_depth = 16
   let mut logical = false
   let mut external = false
   let mut allow_parent_paths = false
@@ -142,7 +150,9 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       arg == "--max-members" ||
       arg == "--max-name-bytes" ||
       arg == "--max-symbols" ||
-      arg == "--max-symbol-name-bytes" {
+      arg == "--max-symbol-name-bytes" ||
+      arg == "--max-archive-bytes" ||
+      arg == "--max-depth" {
       if i + 1 >= args.length() {
         return Err("\{arg} needs a nonnegative integer")
       }
@@ -158,6 +168,8 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
         "--max-members" => max_members = value
         "--max-name-bytes" => max_name_bytes = value
         "--max-symbols" => max_symbols = value
+        "--max-archive-bytes" => max_archive_bytes = value
+        "--max-depth" => max_depth = value
         _ => max_symbol_name_bytes = value
       }
       i += 1
@@ -167,6 +179,9 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       paths.push(arg)
     }
     i += 1
+  }
+  if max_depth > 64 {
+    return Err("--max-depth must be between 0 and 64")
   }
   let expected_paths = if args[0] == "diff" { 2 } else { 1 }
   if paths.length() != expected_paths ||
@@ -198,5 +213,7 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     max_symbol_name_bytes,
     external,
     allow_parent_paths,
+    max_archive_bytes,
+    max_depth,
   })
 }

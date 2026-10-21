@@ -4,11 +4,12 @@
 
 MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它覆盖普通归档和 GNU thin
 归档的读取、创建、编辑、转换、符号索引维护与比较，可用于构建静态库 `.a`、处理构建产物，
-以及读取 `.deb` 的外层容器。核心库直接处理字节，不依赖外部 `ar` 程序。
+以及读取 `.deb` 的外层容器。也支持 Microsoft COFF `.lib` 静态库与导入库。
+核心库直接处理字节，不依赖外部 `ar` 程序。
 
-**0.4.0 提供归档编辑与 thin 内容比较**：从 ELF、Mach-O 和标准 COFF 对象发现符号，写出
-GNU/BSD/Darwin 归档；追加、插入、替换、删除、移动或重命名后自动重建索引。
-GNU thin 支持直接外部文件引用、32/64 位索引、路径重定位和普通归档物化。
+**0.5.0 扩展 Windows 与嵌套 thin 工作流**：读取和写出 COFF 双 linker-member，
+从标准 COFF、bigobj、短导入对象以及 ELF、Mach-O 对象自动发现符号。
+GNU thin 同时支持直接文件与 archive-offset 引用，覆盖创建、完整编辑、重定位、物化和内容比较。
 
 ## 创建并使用静态库
 
@@ -53,10 +54,14 @@ moonar extract libsample.a 0 copied.o
 moonar create libthin.a first.o second.o --thin
 moonar replace libthin.a 1 second.o
 moonar convert libthin.a libpacked.a
+moonar create libnested.a libpacked.a --thin
 ```
 
 thin 保存外部成员引用，普通归档保存成员数据。编辑 thin 会保留 thin 存储方式；
 `convert` 将成员加载后写成普通归档。`--output` 写到另一个目录时会重新计算引用路径。
+thin 创建或追加时，普通归档输入展开为指向其成员头部的 archive-offset 引用；thin 输入展开为
+外部引用。读取嵌套引用会缓存共享容器，并检查目标头部、声明长度、循环引用和累计预算。
+物化与逻辑比较使用被引用成员的实际名称；直接文件引用保留路径名称。
 默认加载范围为归档所在目录及其子目录，真实路径检查会处理符号链接与 Windows 目录联接。
 构建目录确需引用父目录时显式加 `--allow-parent-paths`。
 
@@ -91,9 +96,9 @@ moonar diff libthin.a libpacked.a --logical
 
 写出选项：
 
-- `--format gnu|gnu64|bsd|bsd64|darwin|darwin64`，默认 `gnu`；thin 支持 GNU32/64。
+- `--format gnu|gnu64|bsd|bsd64|darwin|darwin64|coff`，默认 `gnu`；thin 支持 GNU32/64。
 - `--index auto|none`，默认 `auto`。非对象数据可正常打包；已识别但不支持的对象格式
-  在自动模式下明确报错。`none` 跳过发现；Darwin 布局仍包含必要的空索引。
+  在自动模式下明确报错。`none` 跳过发现；Darwin 与 COFF 布局仍包含必要的空索引。
 - `--output FILE` 将编辑结果写到新路径；新输出存在时需要 `--force`。
 - `--preserve-metadata` 保留已有成员的元数据；新输入采用确定性元数据。
 - `--big-endian-index` 选择 BSD/Darwin 大端索引，默认小端。
@@ -107,10 +112,15 @@ moonar diff libthin.a libpacked.a --logical
 `diff` 相同退出 0、不同退出 1、输入错误退出 2；逻辑比较还将配对歧义视为不同。
 详细约定见 [API 与 JSON](docs/API.md)。
 
+Windows 上使用 `moonar create sample.lib first.obj second.obj --format coff` 创建 Microsoft
+静态库；编辑和重建 `.lib` 时同样指定 `--format coff`。bigobj 和短导入对象参与自动索引，
+COFF 两份 linker-member 会交叉校验并以第二份的排序映射公开。真实 MSVC 静态链接与 DLL
+导入消费者见 [Windows 验证脚本](tools/verify_windows.py)。
+
 ## 作为 MoonBit 库使用
 
 ```sh
-moon add xmyd0915/moonar@0.4.0
+moon add xmyd0915/moonar@0.5.0
 ```
 
 在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
@@ -134,9 +144,9 @@ let data = archive.member_bytes(0).unwrap()
 
 | 能力 | 支持范围 |
 | --- | --- |
-| 读取与写出 | GNU32/64、BSD32/64、Darwin32/64；BSD/Darwin 索引支持大小端 |
-| thin | GNU 直接外部文件引用，GNU32/64 索引，创建、编辑、加载、重定位与物化 |
-| 自动符号发现 | ELF32/64 与 Mach-O32/64 大小端可重定位对象、标准小端 COFF 对象 |
+| 读取与写出 | GNU32/64、BSD32/64、Darwin32/64、Microsoft COFF 双索引；BSD/Darwin 支持大小端 |
+| thin | GNU 直接文件与嵌套 archive-offset 引用，GNU32/64 索引，创建、编辑、加载、重定位与物化 |
+| 自动符号发现 | ELF32/64、Mach-O32/64 大小端可重定位对象；标准 COFF、bigobj、短导入对象 |
 | 成员 | 原始名称字节、长名称、重名、空内容、二进制数据和元数据 |
 | 比较 | 物理字节、普通成员内容、元数据、顺序、符号映射与重名配对歧义 |
 
@@ -148,8 +158,7 @@ Darwin 的对齐字节可能包含在成员声明大小内，提取时保留，�
 顺序与符号映射。重名成员优先按相同内容配对，无法唯一识别时报告 `ambiguities`。
 设计和案例见 [比较说明](docs/COMPARISON.md)。
 
-明确的格式边界：GNU thin 嵌套 archive-offset 引用、COFF 双 linker-member 归档、
-COFF bigobj/import object、LTO/bitcode、fat Mach-O、AIX big archive 不在 0.4.0 支持范围内。
+明确的格式边界：LTO/bitcode、fat Mach-O、AIX big archive 不在 0.5.0 支持范围内。
 `check` 校验容器和索引结构，`--external` 另检查 thin 外部成员，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
 内层 tar 解压、链接器实现和包签名校验不属于本库职责。
 
@@ -163,10 +172,12 @@ moon build --target native --deny-warn
 python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe --require-llvm
 python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe
+python tools/verify_windows.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_package.py
 ```
 
-独立工具验证需要 GNU ar/nm、LLVM ar、C 编译器和 Python 3.9+。真实项目验证固定使用
+GNU/LLVM 验证需要 GNU ar/nm、LLVM ar、C 编译器和 Python 3.9+；Windows 专项使用 MSVC。
+嵌套 thin 与 GNU ar 对照，物化结果再由 LLVM 消费。真实项目验证固定使用
 **zlib 1.3.1**：校验源码摘要，编译对象，用 MoonAr 分别创建普通及 thin 静态库，链接执行
 压缩/解压往返，再替换对象并重新链接执行。源码在临时目录处理，不随 MoonAr 分发。
 完整入口、预期结果及平台范围见 [复现指南](docs/REVIEW.md)。
@@ -182,6 +193,10 @@ GNU/LLVM、Python 与 C 编译器仅用于构建或验证；核心库只依赖 M
 64 MiB 展开符号名。CLI 通过 `--max-bytes`、`--max-members`、`--max-name-bytes`、
 `--max-symbols`、`--max-symbol-name-bytes` 调整。符号发现对扫描数量计费，重复引用按
 展开长度计费。大小和偏移使用有符号 32 位整数。
+
+嵌套容器另用 `NestedLimits` 累计限制字节、记录、展开名称和符号；同路径容器每次批量操作
+只加载解析一次。CLI 的 `--max-archive-bytes` 默认 64 MiB，`--max-depth` 默认 16、最大 64。
+嵌套路径与所解析容器的成员名共用名称预算；COFF 两份索引均计入符号数及名称预算。
 
 thin 内容检查与快照对每个输入的全部外部成员累计使用字节预算，重复引用分别计费。
 CLI 先读取完整文件再检查预算；比较、输出和对象发现需要额外内存。当前接口使用内存输入，

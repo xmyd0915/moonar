@@ -143,6 +143,19 @@ pub fn Metadata::equal(Self, Self) -> Bool
 pub fn Metadata::not_equal(Self, Self) -> Bool
 pub fn Metadata::to_repr(Self) -> @debug.Repr
 
+pub(all) struct NestedLimits {
+  max_bytes : Int
+  max_members : Int
+  max_name_bytes : Int
+  max_symbols : Int
+  max_symbol_name_bytes : Int
+  max_depth : Int
+} derive(Eq, @debug.Debug)
+pub fn NestedLimits::equal(Self, Self) -> Bool
+pub fn NestedLimits::new(max_bytes? : Int, max_members? : Int, max_name_bytes? : Int, max_symbols? : Int, max_symbol_name_bytes? : Int, max_depth? : Int) -> Self
+pub fn NestedLimits::not_equal(Self, Self) -> Bool
+pub fn NestedLimits::to_repr(Self) -> @debug.Repr
+
 pub(all) struct ObjectError {
   code : String
   offset : Int
@@ -186,15 +199,17 @@ pub fn ThinArchive::byte_length(Self) -> Int
 pub fn ThinArchive::edit(Self, drop_symbol_indexes? : Bool) -> Result[ThinArchiveBuilder, WriteError]
 pub fn ThinArchive::get_member(Self, Int) -> ThinMember?
 pub fn ThinArchive::inline_bytes(Self, Int) -> Bytes?
-pub fn ThinArchive::load_member(Self, Int, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool) -> Result[Bytes, ParseError]
-pub fn ThinArchive::materialize(Self, (Bytes, Int) -> Result[Bytes, String], drop_symbol_indexes? : Bool, allow_parent_paths? : Bool, max_bytes? : Int) -> Result[ArchiveBuilder, ParseError]
+pub fn ThinArchive::load_member(Self, Int, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool, nested_limits? : NestedLimits) -> Result[Bytes, ParseError]
+pub fn ThinArchive::materialize(Self, (Bytes, Int) -> Result[Bytes, String], drop_symbol_indexes? : Bool, allow_parent_paths? : Bool, max_bytes? : Int, nested_limits? : NestedLimits) -> Result[ArchiveBuilder, ParseError]
 pub fn ThinArchive::member_count(Self) -> Int
 pub fn ThinArchive::member_path(Self, Int, allow_parent_paths? : Bool) -> Result[Bytes, ParseError]
-pub fn ThinArchive::snapshot(Self, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool) -> Result[ArchiveSnapshot, ParseError]
+pub fn ThinArchive::member_sources(Self, (Bytes, Int) -> Result[Bytes, String], allow_parent_paths? : Bool, nested_limits? : NestedLimits) -> Result[Array[Bytes], ParseError]
+pub fn ThinArchive::resolve_member(Self, Int, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool, nested_limits? : NestedLimits) -> Result[WriteMember, ParseError]
+pub fn ThinArchive::snapshot(Self, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool, nested_limits? : NestedLimits) -> Result[ArchiveSnapshot, ParseError]
 pub fn ThinArchive::symbol_indexes(Self) -> Array[SymbolIndex]
 pub fn ThinArchive::to_json(Self) -> Json
 pub fn ThinArchive::to_repr(Self) -> @debug.Repr
-pub fn ThinArchive::validate_members(Self, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool) -> Result[Int, ParseError]
+pub fn ThinArchive::validate_members(Self, (Bytes, Int) -> Result[Bytes, String], max_bytes? : Int, allow_parent_paths? : Bool, nested_limits? : NestedLimits) -> Result[Int, ParseError]
 
 type ThinArchiveBuilder derive(@debug.Debug)
 pub fn ThinArchiveBuilder::append(Self, ThinWriteMember) -> Result[Self, WriteError]
@@ -215,6 +230,7 @@ pub(all) struct ThinMember {
   header_offset : Int
   size : Int
   metadata : Metadata
+  archive_member_offset : Int?
 } derive(Eq, @debug.Debug)
 pub fn ThinMember::equal(Self, Self) -> Bool
 pub fn ThinMember::name_hex(Self) -> String
@@ -226,9 +242,10 @@ pub(all) struct ThinWriteMember {
   name : Bytes
   size : Int
   metadata : Metadata
+  archive_member_offset : Int?
 } derive(Eq, @debug.Debug)
 pub fn ThinWriteMember::equal(Self, Self) -> Bool
-pub fn ThinWriteMember::new(Bytes, Int, metadata? : Metadata) -> Self
+pub fn ThinWriteMember::new(Bytes, Int, metadata? : Metadata, archive_member_offset? : Int?) -> Self
 pub fn ThinWriteMember::not_equal(Self, Self) -> Bool
 pub fn ThinWriteMember::to_repr(Self) -> @debug.Repr
 
@@ -248,6 +265,7 @@ pub(all) enum WriteFormat {
   Bsd64
   Darwin
   Darwin64
+  Coff
 } derive(Eq, @debug.Debug)
 pub fn WriteFormat::equal(Self, Self) -> Bool
 pub fn WriteFormat::not_equal(Self, Self) -> Bool

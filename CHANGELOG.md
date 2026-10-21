@@ -1,5 +1,31 @@
 # Changes
 
+## 0.5.0 — 2026-10-21
+
+- Read and write Microsoft COFF libraries with cross-checked dual linker members,
+  canonical sorted symbol maps, NUL long names and unknown timestamp handling.
+- Discover symbols from bigobj and short import objects; verify rebuilt static
+  and DLL import libraries with MSVC linkers and executed consumers.
+- Resolve, write and edit GNU nested archive-offset thin references, including
+  shared-container caches, manifests, exact target validation and cycle detection.
+- Expand regular/thin archive inputs during thin creation and addition; resolve
+  logical member names for extraction, materialization and snapshot comparison.
+- Add aggregate nested-container budgets and bounded depth, protect transitive
+  dependencies from output aliasing and retain in-place broken-reference removal.
+- Fix lexical name ordering in BSD SORTED indexes; batch additions and deletions
+  without repeatedly copying the whole editing plan.
+
+### API notes
+
+`WriteFormat` adds `Coff`. `ThinMember` and `ThinWriteMember` add optional
+`archive_member_offset`; constructor callers keep their existing defaults.
+Thin loading methods accept optional `nested_limits`. New `resolve_member` returns
+the resolved name, bytes and outer metadata; `member_sources` enumerates dependency
+paths without reading direct payloads. Container loader requests carry the remaining
+archive-byte budget; direct requests retain their exact declared payload size.
+`cli.Request` adds `max_archive_bytes` and `max_depth`. Thin JSON adds
+`archive_member_offset` (number or null); COFF indexes use `format: "coff"`.
+
 ## 0.4.0 — 2026-10-21
 
 - Add immutable comparison snapshots for ordinary and thin archives, retaining

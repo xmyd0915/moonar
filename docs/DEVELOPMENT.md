@@ -10,6 +10,9 @@
 | `symbols.mbt` | GNU/BSD 32/64 位索引、字节序约束、字符串与成员引用校验 |
 | `thin.mbt` | GNU thin 的独立容器、外部成员路径和调用者加载器 |
 | `write.mbt` | 不可变成员编辑计划、GNU/BSD/Darwin 六种布局和索引写出 |
+| `coff_symbols.mbt` / `coff_write.mbt` | Microsoft 双 linker-member 解析、交叉校验与写出 |
+| `nested_load.mbt` | 嵌套归档寻址、缓存、依赖枚举、累计预算与循环检查 |
+| `object_import.mbt` | bigobj 分类与短导入对象符号发现 |
 | `thin_write.mbt` | thin 成员编辑、GNU32/64 写出、累计预算与物化 |
 | `object_symbols.mbt` | ELF/Mach-O/COFF 符号发现、结构约束与跨成员预算 |
 | `compare.mbt` | 内容优先配对、歧义报告、物理与逻辑比较、符号映射和顺序判断 |
@@ -75,7 +78,8 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
 - `tools/verify_workflow.py` 验证写出的 GNU/BSD、重名编辑、GNU/LLVM thin 加载与物化，
   以及 GNU32 映射的 `nm` 结果和真实对象链接运行。
 - `tools/verify_cli.py` 从真实对象完成全部编辑命令、六种写出布局、自动索引、
-  thin32/64 重定位与物化；检查链接运行及可用工具下的 Mach-O 链接。
+  直接与嵌套 thin32/64 创建、重定位与物化；检查链接运行及可用工具下的 Mach-O 链接。
+- `tools/verify_windows.py` 通过 MSVC 验证 COFF 双表、bigobj、短导入对象，静态与 DLL 消费者实际链接运行。
 - `tools/verify_io.py` 在 native 与 Node 检查原子发布、并发、Unicode、禁止覆盖、
   失败保留、真实路径范围与输出别名保护。
 - `tools/verify_zlib.py` 校验上游 zlib 1.3.1 摘要，编译 15 个对象，创建普通及 thin
@@ -83,7 +87,7 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
 - Linux 和 Windows CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
   GNU/LLVM 对照，以及 `dpkg-deb --info` 检查 Debian 示例。
 
-对照过程中曾发现两个需要明确处理的工具行为：
+对照过程中明确处理了以下需要明确处理的工具行为：
 
 1. LLVM 18.1.3 的 Darwin 布局会把填充计入成员大小。对照脚本据此比较实际提取字节，
    不再假设归档成员大小总是等于归档前的文件大小。

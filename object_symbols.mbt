@@ -788,22 +788,44 @@ fn object_coff_machine(machine : Int) -> Bool {
 fn object_coff(
   data : Bytes,
   budget : ObjectBudget,
+  big? : Bool = false,
 ) -> Array[Bytes] raise InvalidObject {
-  object_range(data, 0, 20)
-  let optional_size = object_number(data, 16, 2, true, 65535)
-  let characteristics = object_number(data, 18, 2, true, 65535)
-  if optional_size != 0 || (characteristics & 0x2002) != 0 {
-    object_reject(
-      "OB002", 16, "symbol discovery requires a standard relocatable COFF object",
-    )
+  let header_size = if big { 56 } else { 20 }
+  let symbol_size = if big { 20 } else { 18 }
+  let storage_offset = if big { 18 } else { 16 }
+  let table_field = if big { 48 } else { 8 }
+  let count_field = if big { 52 } else { 12 }
+  object_range(data, 0, header_size)
+  if !big {
+    let optional_size = object_number(data, 16, 2, true, 65535)
+    let characteristics = object_number(data, 18, 2, true, 65535)
+    if optional_size != 0 || (characteristics & 0x2002) != 0 {
+      object_reject(
+        "OB002", 16, "symbol discovery requires a relocatable COFF object",
+      )
+    }
   }
-  let section_count = object_number(data, 2, 2, true, (data.length() - 20) / 40)
-  if section_count > 65279 {
+  let section_count = object_number(
+    data,
+    if big {
+      44
+    } else {
+      2
+    },
+    if big {
+      4
+    } else {
+      2
+    },
+    true,
+    (data.length() - header_size) / 40,
+  )
+  if !big && section_count > 65279 {
     object_reject("OB002", 2, "COFF section count requires the bigobj format")
   }
-  let section_end = 20 + section_count * 40
+  let section_end = header_size + section_count * 40
   for n = 0; n < section_count; n = n + 1 {
-    let section = 20 + n * 40
+    let section = header_size + n * 40
     let flags = object_tag(data, section + 36, true)
     let raw_offset = object_number(data, section + 20, 4, true, data.length())
     if raw_offset != 0 || (flags & 128U) == 0U {
@@ -865,25 +887,29 @@ fn object_coff(
       )
     }
   }
-  let table_offset = object_number(data, 8, 4, true, data.length())
+  let table_offset = object_number(data, table_field, 4, true, data.length())
   let count = object_number(
     data,
-    12,
+    count_field,
     4,
     true,
-    (data.length() - table_offset) / 18,
+    (data.length() - table_offset) / symbol_size,
   )
-  object_charge_symbols(budget, count, 12)
+  object_charge_symbols(budget, count, count_field)
   if table_offset == 0 {
     if count != 0 {
-      object_reject("OB001", 8, "COFF symbols lack a symbol-table offset")
+      object_reject(
+        "OB001", table_field, "COFF symbols lack a symbol-table offset",
+      )
     }
     return []
   }
   if table_offset < section_end {
-    object_reject("OB001", 8, "COFF symbol table overlaps the file headers")
+    object_reject(
+      "OB001", table_field, "COFF symbol table overlaps the file headers",
+    )
   }
-  let strings_offset = table_offset + count * 18
+  let strings_offset = table_offset + count * symbol_size
   let strings_size = object_number(
     data,
     strings_offset,
@@ -906,40 +932,62 @@ fn object_coff(
   let mut index = 0
   while index < count {
     primary[index] = ()
-    let pos = table_offset + index * 18
-    let auxiliary_count = data[pos + 17].to_int()
+    let pos = table_offset + index * symbol_size
+    let auxiliary_count = data[pos + storage_offset + 1].to_int()
     if auxiliary_count > count - index - 1 {
       object_reject(
         "OB001",
-        pos + 17,
+        pos + storage_offset + 1,
         "COFF auxiliary records exceed the symbol table",
       )
     }
-    let section = object_number(data, pos + 12, 2, true, 65535)
-    if section != 65535 &&
-      section != 65534 &&
-      (section > 65279 || section > section_count) {
-      object_reject(
-        "OB001",
-        pos + 12,
-        "COFF symbol refers to a missing section",
-      )
+    let section_tag = if big {
+      object_tag(data, pos + 12, true)
+    } else {
+      object_number(data, pos + 12, 2, true, 65535).reinterpret_as_uint()
     }
-    let storage = data[pos + 16].to_int()
+    let section = if section_tag == (if big { 0xffffffffU } else { 65535U }) {
+      -1
+    } else if section_tag == (if big { 0xfffffffeU } else { 65534U }) {
+      -2
+    } else {
+      let number = object_number(
+        data,
+        pos + 12,
+        if big {
+          4
+        } else {
+          2
+        },
+        true,
+        section_count,
+      )
+      if !big && number > 65279 {
+        object_reject("OB001", pos + 12, "reserved COFF section number")
+      }
+      number
+    }
+    let storage = data[pos + storage_offset].to_int()
     let common = section == 0 && object_nonzero(data, pos + 8, 4)
     let mut exported = (storage == 2 || storage == 5) &&
-      (common || (section != 0 && section != 65534))
+      (common || (section != 0 && section != -2))
     if storage == 105 {
       if auxiliary_count != 1 || section != 0 || common {
         object_reject("OB001", pos, "invalid COFF weak-external symbol record")
       }
-      let target = object_number(data, pos + 18, 4, true, count - 1)
-      weak_targets.push((target, pos + 18))
-      let search = object_number(data, pos + 22, 4, true, 2147483647)
+      let target = object_number(data, pos + symbol_size, 4, true, count - 1)
+      weak_targets.push((target, pos + symbol_size))
+      let search = object_number(
+        data,
+        pos + symbol_size + 4,
+        4,
+        true,
+        2147483647,
+      )
       if search < 1 || search > 4 {
         object_reject(
           "OB002",
-          pos + 22,
+          pos + symbol_size + 4,
           "unsupported COFF weak-external search mode",
         )
       }
@@ -989,7 +1037,7 @@ fn object_coff(
         "OB001", pos, "COFF weak target refers to an auxiliary record",
       )
     }
-    let storage = data[table_offset + target * 18 + 16].to_int()
+    let storage = data[table_offset + target * symbol_size + storage_offset].to_int()
     if storage != 2 && storage != 5 && storage != 105 {
       object_reject(
         "OB001", pos, "COFF weak target must refer to an external symbol",
@@ -1026,6 +1074,9 @@ fn object_discover(
   if magic == b"\xfe\xed\xfa\xcf"[:] {
     return object_macho(data, true, false, budget)
   }
+  if magic == b"\x00\x00\xff\xff"[:] {
+    return object_coff_anonymous(data, budget)
+  }
   let coff_machine = data[0].to_int() + data[1].to_int() * 256
   if object_coff_machine(coff_machine) {
     return object_coff(data, budget)
@@ -1037,7 +1088,6 @@ fn object_discover(
     magic == b"BC\xc0\xde"[:] ||
     magic == b"\xde\xc0\x17\x0b"[:] ||
     magic == b"\x00asm"[:] ||
-    magic == b"\x00\x00\xff\xff"[:] ||
     coff_machine == 0x0160 ||
     coff_machine == 0xa641 ||
     coff_machine == 0xa64e ||
@@ -1059,7 +1109,8 @@ fn object_discover(
 /// common and absolute symbols are included; undefined/local/debug symbols
 /// are omitted. Duplicate names within one object retain their first position.
 /// Standard little-endian COFF includes weak aliases and skips auxiliary records.
-/// Bigobj, import objects, executable images, bitcode and fat objects are rejected.
+/// Bigobj and short import objects are supported; executable images, bitcode
+/// and fat objects are rejected.
 /// Ordinary data returns an empty array; recognized unsupported object formats
 /// and malformed supported objects return an error.
 /// max_symbols counts inspected symbol-table entries, including filtered entries.

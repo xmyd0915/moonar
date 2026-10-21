@@ -31,7 +31,7 @@ python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe 
 | --- | --- |
 | `verify_archives.py` | 参考工具生成归档，MoonAr 读取；列表、提取、重名、索引、损坏引用、逻辑比较和 thin 元数据 |
 | `verify_workflow.py` | 公共库示例创建与编辑，独立工具提取，加载 thin 并物化，显式映射写出后真实链接 |
-| `verify_cli.py` | 全部编辑命令、六种布局与字节序、自动符号发现、GNU32/64 thin、重定位、缺失成员删除、真实链接运行 |
+| `verify_cli.py` | 全部编辑命令、六种布局与字节序、自动符号发现、GNU32/64 直接及嵌套 thin、归档输入展开、重定位、缺失成员删除、真实链接运行 |
 
 支持 `--ar`、`--nm`、`--cc`、`--llvm-ar` 显式指定工具。完整 CLI 脚本在有 Clang 时
 额外生成 Mach-O 对象；提供 `--zig` 可验证四种 BSD/Darwin 布局的 Mach-O 链接。
@@ -40,6 +40,21 @@ python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe 
 GNU/LLVM 对照使用临时目录实际提取二进制，避免 Windows 旧 GNU ar 的标准输出换行转换。
 Darwin 声明在载荷内的填充保留；BSD/Darwin 原始对象符号独立于归档映射作参照。
 没有 LLVM 时不带 `--require-llvm` 可以运行其余检查，跳过项会明确输出。
+
+## Windows 静态库与导入库
+
+```sh
+python tools/verify_windows.py --moonar _build/native/debug/build/cmd/main/main.exe
+```
+
+使用本机 MSVC，可通过 `--msvc-bin` 指定包含 `cl.exe`、`lib.exe`、`link.exe` 和
+`dumpbin.exe` 的 x64 目录；否则从 PATH 或 vswhere 定位。样本无 CRT/SDK 依赖。
+脚本编译标准 COFF 与 `/bigobj`，核对参考库双表与长名称，创建、重建、替换和移动成员，
+链接并运行静态消费者；随后创建 DLL 和导入库，重建短导入对象索引并执行 DLL 消费者。
+预算失败后核对原文件字节不变。
+
+嵌套 thin 由 `verify_cli.py` 与 GNU ar 双向验证，物化后的普通归档另由 LLVM 读取。
+内部测试覆盖继续指向 thin 的链、循环、精确偏移与元数据，文件测试覆盖传递依赖保护。
 
 ## 文件发布与路径回归
 
@@ -78,14 +93,14 @@ python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_package.py
 ```
 
-脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。六项公开接口测试在四个后端运行，
-覆盖六种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入、thin 内容校验、不可变比较快照和返回数组隔离。
+脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。八项公开接口测试在四个后端运行，
+覆盖七种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入、thin 内容校验、嵌套引用解析与预算、COFF 双表与短导入对象、不可变比较快照和返回数组隔离。
 验证报告写到 `_build/verification/package-consumer.json`，包含版本与包摘要。
 
 ## 验收边界与持续集成
 
 [CI](../.github/workflows/ci.yml) 在 Linux/Windows 跑四后端测试、native/Node 文件检查和
-公共 API 示例；Linux 安装明确的 GNU/LLVM/Clang/GCC 工具链，运行所有参考与 zlib 流程。
+公共 API 示例；Windows 另执行 MSVC 静态库和导入库消费者；Linux 安装明确的 GNU/LLVM/Clang/GCC 工具链，运行所有参考与 zlib 流程。
 提交对应结果见 [Actions](https://github.com/xmyd0915/moonar/actions)。
 
 结构检查与对象发现承担不同职责：`check` 验证容器和索引引用，自动发现验证所支持的对象

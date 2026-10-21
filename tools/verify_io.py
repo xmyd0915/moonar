@@ -260,6 +260,45 @@ def verify_external_queries(label, command, root, place):
     assert (before.read_bytes(), after.read_bytes()) == originals
     print(f"PASS {label}: thin external validation, mixed-storage comparison, unchanged-container content changes and failure diagnostics")
 
+def verify_nested_dependencies(label, command, root, place):
+    directory = place / "nested-dependencies"
+    directory.mkdir()
+    leaf, inner, outer = directory / "leaf.bin", directory / "inner.a", directory / "outer.a"
+    payload = bytes(range(256))
+    leaf.write_bytes(payload)
+    run(command, ["create", inner, leaf, "--thin", "--index", "none"], root)
+    document = json.loads(run(command, ["inspect", inner, "--json"], root).stdout)
+    offset = next(item["header_offset"] for item in document["members"] if item["kind"] == "regular")
+    def header(name, size):
+        return (name.ljust(16) + "0".ljust(12) + "0".ljust(6) + "0".ljust(6)
+                + "644".ljust(8) + str(size).ljust(10) + "`\n").encode("ascii")
+    names = b"inner.a/\n"
+    outer.write_bytes(b"!<thin>\n" + header("//", len(names)) + names + b"\n" * (len(names) % 2)
+                      + header("/0:" + str(offset), len(payload)))
+    original = outer.read_bytes()
+    checked = json.loads(run(command, ["check", outer, "--external", "--json"], root).stdout)
+    assert checked["external_byte_length"] == len(payload)
+    copy = directory / "copy.bin"
+    run(command, ["extract", outer, 0, copy], root)
+    assert copy.read_bytes() == payload
+    packed = directory / "packed.a"
+    run(command, ["convert", outer, packed, "--index", "none"], root)
+    run(command, ["diff", outer, packed, "--logical"], root)
+    for args in (["extract", outer, 0, leaf, "--force"],
+                 ["convert", outer, leaf, "--force"],
+                 ["delete", outer, 0, "--index", "none", "--output", leaf, "--force"]):
+        reply = json.loads(run(command, [*args, "--json"], root, expected=2).stdout)
+        assert reply["error"]["code"] == "IO003", reply
+        assert leaf.read_bytes() == payload and outer.read_bytes() == original
+    for option in ("--max-depth", "--max-archive-bytes"):
+        reply = json.loads(run(command, ["check", outer, "--external", option, 0, "--json"], root, expected=1).stdout)
+        assert reply["error"]["code"] == "AR008", reply
+    inner.unlink()
+    run(command, ["delete", outer, 0, "--index", "none"], root)
+    assert outer.read_bytes() == b"!<thin>\n"
+    print(f"PASS {label}: nested thin chains, logical names, transitive output protection, limits and broken-reference removal")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moonar", required=True)
@@ -279,6 +318,7 @@ def main():
             verify_containment(label, command, root, place)
             verify_alias_protection(label, command, root, place)
             verify_external_queries(label, command, root, place)
+            verify_nested_dependencies(label, command, root, place)
 
 
 if __name__ == "__main__":

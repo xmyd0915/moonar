@@ -38,6 +38,8 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
   let mut max_name_bytes = 67108864
   let mut max_symbols = 1000000
   let mut max_symbol_name_bytes = 67108864
+  let mut max_archive_bytes = 67108864
+  let mut max_depth = 16
   let mut literal = false
   let seen : Map[String, Unit] = Map([])
   let mut i = 1
@@ -68,6 +70,8 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
         | "--max-bytes"
         | "--max-members"
         | "--max-name-bytes"
+        | "--max-archive-bytes"
+        | "--max-depth"
         | "--max-symbols"
         | "--max-symbol-name-bytes" => {
           if i + 1 >= args.length() {
@@ -91,6 +95,7 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
                 "bsd64" => @ar.Bsd64
                 "darwin" => @ar.Darwin
                 "darwin64" => @ar.Darwin64
+                "coff" => @ar.Coff
                 _ => return Err("unsupported output format")
               }
             _ => {
@@ -103,6 +108,8 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
                 "--max-members" => max_members = number
                 "--max-name-bytes" => max_name_bytes = number
                 "--max-symbols" => max_symbols = number
+                "--max-archive-bytes" => max_archive_bytes = number
+                "--max-depth" => max_depth = number
                 _ => max_symbol_name_bytes = number
               }
             }
@@ -112,6 +119,9 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
       }
     }
     i += 1
+  }
+  if max_depth > 64 {
+    return Err("--max-depth must be between 0 and 64")
   }
   if paths.any(p => p.is_empty() || p.contains("\u0000")) ||
     (output is Some(p) && (p.is_empty() || p.contains("\u0000"))) {
@@ -153,7 +163,8 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
   if operation == "index" && index_mode != "auto" {
     return Err("index requires automatic symbol discovery")
   }
-  if !little_endian && (format == @ar.Gnu || format == @ar.Gnu64) {
+  if !little_endian &&
+    (format == @ar.Gnu || format == @ar.Gnu64 || format == @ar.Coff) {
     return Err("--big-endian-index requires a BSD or Darwin format")
   }
   if thin && format != @ar.Gnu && format != @ar.Gnu64 {
@@ -193,5 +204,7 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
     logical: false,
     external: false,
     allow_parent_paths: allow_parent,
+    max_archive_bytes,
+    max_depth,
   })
 }

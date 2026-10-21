@@ -67,7 +67,7 @@ test "public regular builder edits and every output format rebuild indexes" {
   assert_eq(original.members()[0].name, b"old.o")
   let symbols = write_ok(plan.discover_symbols())
   assert_eq(symbols, [{ name: b"entry", member_index: 0, }])
-  for format in [@ar.Gnu, @ar.Gnu64, @ar.Bsd, @ar.Bsd64, @ar.Darwin, @ar.Darwin64] {
+  for format in [@ar.Gnu, @ar.Gnu64, @ar.Bsd, @ar.Bsd64, @ar.Darwin, @ar.Darwin64, @ar.Coff] {
     let bytes = write_ok(plan.write(format~, symbols=Some(symbols)))
     let archive = parse_ok(@ar.parse(bytes))
     let index = archive.symbol_indexes()[0]
@@ -178,6 +178,42 @@ test "public immutable snapshots validate thin contents and preserve source iden
   assert_true(thin.validate_members((_, _) => Ok(b"x")) is Err({ code: "AR014", .. }))
 }
 
+///|
+test "public nested references preserve offsets and resolve through bounded shared loaders" {
+  let data = write_ok(write_ok(@ar.ArchiveBuilder::from_members([
+    @ar.WriteMember::new(b"actual.o", fixture()),
+  ])).write())
+  let plan = write_ok(@ar.ThinArchiveBuilder::from_members([
+    @ar.ThinWriteMember::new(b"base.a", fixture().length(), archive_member_offset=Some(8)),
+  ]))
+  let thin = parse_ok(@ar.parse_thin(write_ok(plan.write())))
+  assert_eq(thin.get_member(1).unwrap().archive_member_offset, Some(8))
+  let loader = (_, _) => Ok(data)
+  let actual = parse_ok(thin.resolve_member(1, loader))
+  assert_eq((actual.name, actual.data), (b"actual.o", fixture()))
+  assert_eq(parse_ok(thin.member_sources(loader)), [b"base.a"])
+  let regular = parse_ok(thin.materialize(loader))
+  let snapshot = parse_ok(thin.snapshot(loader))
+  let ordinary = parse_ok(@ar.parse(write_ok(regular.write())))
+  assert_true(snapshot.compare_logical(ordinary.snapshot()).content_equal)
+  assert_true(thin.materialize(loader, nested_limits=@ar.NestedLimits::new(max_depth=0)) is Err({ code: "AR008", .. }))
+}
+
+///|
+test "public short import discovery and COFF dual indexes round trip" {
+  let object = b"\x00\x00\xff\xff\x00\x00\x64\x86\x00\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x04\x00entry\x00x.dll\x00"
+  match @ar.symbols_from_object(object) {
+    Ok(names) => assert_eq(names, [b"__imp_entry", b"entry"])
+    Err(error) => fail(error.message)
+  }
+  let plan = write_ok(@ar.ArchiveBuilder::from_members([@ar.WriteMember::new(b"long import member.obj", object)]))
+  let symbols = write_ok(plan.discover_symbols())
+  let archive = parse_ok(@ar.parse(write_ok(plan.write(format=@ar.Coff, symbols=Some(symbols)))))
+  assert_eq(archive.symbol_indexes()[0].format, "coff")
+  assert_eq(archive.symbol_indexes()[0].symbols.length(), 2)
+  assert_eq(archive.get_member(0).unwrap().kind, @ar.SymbolTable)
+  assert_eq(archive.get_member(1).unwrap().kind, @ar.SymbolTable)
+}
 '''
 
 
@@ -263,13 +299,14 @@ def main():
         print(output.strip())
     record = {
         "version": version, "archive": str(archive), "archive_sha256": digest,
-        "packaged_files": len(files), "consumer_tests_per_target": 6,
+        "packaged_files": len(files), "consumer_tests_per_target": len(re.findall(r'^test "', CONSUMER, re.M)),
         "targets": ["wasm", "wasm-gc", "js", "native"], "passed": True,
         "interfaces": [
             "symbols_from_object", "ArchiveBuilder.discover_symbols",
-            "ArchiveBuilder.insert", "WriteFormat six layouts",
+            "ArchiveBuilder.insert", "WriteFormat seven layouts",
             "ThinArchiveBuilder", "ThinArchive.materialize", "compare_logical",
             "ThinArchive.validate_members", "ArchiveSnapshot.compare_logical",
+            "ThinArchive.resolve_member", "ThinArchive.member_sources", "NestedLimits", "WriteFormat.Coff",
         ],
     }
     report = args.report if args.report.is_absolute() else root / args.report

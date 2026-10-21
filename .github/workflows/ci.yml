@@ -49,6 +49,9 @@ jobs:
         run: python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe
       - name: Verify native and Node filesystem workflows
         run: python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe --node-entry _build/js/debug/build/cmd/main/main.js
+      - name: Verify MSVC static and import library consumers
+        if: runner.os == 'Windows'
+        run: python tools/verify_windows.py --moonar _build/native/debug/build/cmd/main/main.exe
       - name: Run public API consumer
         run: moon run examples/read_deb --target native
       - name: Check example Debian package with dpkg
