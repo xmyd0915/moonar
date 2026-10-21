@@ -9,6 +9,14 @@ Creation, editing and the separate `ThinArchive` API are documented in
 [Writing and thin members](WRITING.md). Editor positions count ordinary members
 only; parsed archive and symbol-index positions count physical records.
 
+The injectable CLI uses `canonical(".")` to identify Windows host path syntax.
+Native and Node adapters supply real canonical paths; an identity-only callback
+uses slash-separated POSIX semantics. Windows filesystem arguments normalize
+separators and retain drive-relative meaning. Member rename values are literal;
+reported output paths retain their original argument spelling. Help and version
+do not invoke filesystem callbacks. Portable thin-member restrictions are separate
+from host directory names, so POSIX parent directories may contain backslashes.
+
 ## JSON version 1
 
 All JSON results contain `schema_version: 1`. Field ordering is not contractual.

@@ -31,6 +31,8 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
   版本 3 摘要头部、范围、模块、符号、comdat 与 uncommon 字段。
 - [GCC 开发者关于 slim LTO 标记的说明](https://gcc.gnu.org/pipermail/gcc/2023-February/240775.html)：
   识别需要插件获取真实定义的 GCC slim 对象。
+- [Microsoft Windows 文件路径格式](https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats)：
+  盘符根目录、盘符相对路径、UNC 与宿主路径语义。
 
 实现所覆盖的格式和限制见 [README](README.md)。
 

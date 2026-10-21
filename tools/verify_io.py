@@ -299,6 +299,54 @@ def verify_nested_dependencies(label, command, root, place):
     print(f"PASS {label}: nested thin chains, logical names, transitive output protection, limits and broken-reference removal")
 
 
+def verify_path_spellings(label, command, root, place):
+    if os.name == "nt":
+        directory = place / "drive-relative"
+        directory.mkdir()
+        (directory / "member.bin").write_bytes(b"drive relative payload")
+        drive = directory.drive
+        source, archive = drive + "member.bin", drive + "library.a"
+        reply = json.loads(run(command, ["create", archive, source, "--json"], directory).stdout)
+        assert reply["output"] == archive
+        assert ordinary_names(command, directory, archive) == [b"member.bin"]
+        thin = drive + "thin.a"
+        run(command, ["create", thin, source, "--thin", "--index", "none"], directory)
+        run(command, ["check", thin, "--external"], directory)
+        run(command, ["convert", thin, drive + "packed.a", "--index", "none"], directory)
+        run(command, ["diff", thin, drive + "packed.a", "--logical"], directory)
+        run(command, ["check", "drive-relative\\thin.a", "--external"], place)
+        run(command, ["rename", archive, 0, "literal\\member"], directory)
+        assert ordinary_names(command, directory, archive) == [b"literal\\member"]
+        run(command, ["extract", archive, 0, drive + "copy.bin"], directory)
+        assert (directory / "copy.bin").read_bytes() == (directory / "member.bin").read_bytes()
+        print(f"PASS {label}: Windows drive-relative files, backslash thin queries and literal archive names")
+    else:
+        directory = place / "directory\\component"
+        directory.mkdir()
+        source, archive = directory / "literal\\name.bin", directory / "library.a"
+        payload = b"literal POSIX backslash"
+        source.write_bytes(payload)
+        run(command, ["create", archive, source], root)
+        assert ordinary_names(command, root, archive) == [b"literal\\name.bin"]
+        run(command, ["rename", archive, 0, "new\\member"], root)
+        output = directory / "copy\\data.bin"
+        run(command, ["extract", archive, 0, output], root)
+        assert output.read_bytes() == payload
+        # A backslash in the containing directory is a valid host path. The
+        # portable member reference itself still follows the thin path policy.
+        plain = directory / "plain.bin"
+        plain.write_bytes(payload)
+        thin, packed = directory / "thin.a", directory / "packed.a"
+        run(command, ["create", thin, plain, "--thin", "--index", "none"], root)
+        run(command, ["check", thin, "--external"], root)
+        run(command, ["convert", thin, packed, "--index", "none"], root)
+        run(command, ["diff", thin, packed, "--logical"], root)
+        invalid = directory / "invalid.a"
+        run(command, ["create", invalid, source, "--thin", "--index", "none"], root, expected=2)
+        assert not invalid.exists() and source.read_bytes() == payload
+        print(f"PASS {label}: POSIX literal backslashes, thin parent directories and portable-reference rejection")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moonar", required=True)
@@ -319,6 +367,7 @@ def main():
             verify_alias_protection(label, command, root, place)
             verify_external_queries(label, command, root, place)
             verify_nested_dependencies(label, command, root, place)
+            verify_path_spellings(label, command, root, place)
 
 
 if __name__ == "__main__":

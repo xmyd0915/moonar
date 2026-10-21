@@ -21,6 +21,7 @@
 | `snapshot.mbt` | thin 加载预检、累计预算、只读内容校验与不可变比较快照 |
 | `json.mbt` | 版本化 JSON 输出与无损名称表示 |
 | `cli/` | 参数解析、命令执行和退出码 |
+| `cli/paths.mbt` | 宿主路径规则、根目录、真实路径身份、thin 重定位与输出保护辅助 |
 | `cmd/main/` | native/Node 文件接口、原子发布、真实路径检查与命令行入口 |
 | `examples/read_deb/` | 通过公共 API 读取 Debian 包外层的示例 |
 | `examples/archive_workflow/` | 创建、编辑、thin 加载和静态库写出的公共 API 消费者 |

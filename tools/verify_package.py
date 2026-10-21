@@ -233,6 +233,23 @@ test "public LLVM bitcode discovery builds ordinary and thin archive indexes" {
   let loaded = parse_ok(thin.materialize((_, _) => Ok(object), drop_symbol_indexes=true))
   assert_eq(write_ok(loaded.discover_symbols()), symbols)
 }
+
+///|
+test "public CLI separates host path syntax from ordinary member names" {
+  for windows in [false, true] {
+    let inputs : Array[String] = []
+    let outputs : Array[Bytes] = []
+    let request = @cli.parse_args(["create", "result.a", "part\\name.bin"]).unwrap()
+    let reply = @cli.run(request,
+      fn(path) { inputs.push(path); Ok(b"payload") },
+      write=fn(_, bytes, _) { outputs.push(bytes); Ok(()) },
+      canonical=fn(path) { Ok(if path == "." { if windows { "C:\\work" } else { "/work" } } else { path }) })
+    assert_eq(reply.exit_code, 0)
+    assert_eq(inputs, [if windows { "part/name.bin" } else { "part\\name.bin" }])
+    let plan = write_ok(parse_ok(@ar.parse(outputs[0])).edit(drop_symbol_indexes=true))
+    assert_eq(plan.members()[0].name, if windows { b"name.bin" } else { b"part\\name.bin" })
+  }
+}
 '''
 
 
@@ -348,13 +365,17 @@ def main():
                 target.write_bytes(package.read(entry))
         provider_metadata = (provider / "moon.mod").read_text(encoding="utf-8")
         assert f'version = "{version}"' in provider_metadata
+        assert 'license = "MIT"' in provider_metadata
+        for name in ("LICENSE", "README.md", "ORIGINS.md", "docs/WRITING.md", "docs/API.md"):
+            assert (provider / name).is_file() and (provider / name).stat().st_size > 0, name
+        assert (provider / "LICENSE").read_bytes() == (root / "LICENSE").read_bytes()
         (consumer / "moon.mod").write_text(
             f'name = "verification/moonar-consumer"\nversion = "0.1.0"\n'
             f'import {{ "{module}@{version}", }}\n', encoding="utf-8",
         )
         (consumer / "moon.work").write_text('members = [ ".", "./provider" ]\n', encoding="utf-8")
         (consumer / "moon.pkg").write_text(
-            f'import {{ "{module}" @ar, }} for "test"\n', encoding="utf-8",
+            f'import {{ "{module}" @ar, "{module}/cli" @cli, }} for "test"\n', encoding="utf-8",
         )
         fixture = 'b"' + "".join(f"\\x{byte:02x}" for byte in elf_fixture()) + '"'
         bitcode = 'b"' + "".join(f"\\x{byte:02x}" for byte in bitcode_fixture()) + '"'
@@ -377,7 +398,9 @@ def main():
             "ThinArchive.validate_members", "ArchiveSnapshot.compare_logical",
             "ThinArchive.resolve_member", "ThinArchive.member_sources", "NestedLimits", "WriteFormat.Coff",
             "LLVM bitcode version-3 symbol discovery",
+            "cli.run host path semantics",
         ],
+        "license_and_documentation_present": True,
     }
     report = args.report if args.report.is_absolute() else root / args.report
     report.parent.mkdir(parents=True, exist_ok=True)

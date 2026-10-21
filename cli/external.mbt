@@ -38,12 +38,19 @@ fn external_reader(
   allow_parent_paths : Bool,
   read : (String) -> Result[Bytes, String],
   validate_path : (String, String) -> Result[Unit, String],
+  windows? : Bool = false,
 ) -> (Bytes, Int) -> Result[Bytes, String] {
   fn(name, _expected) {
     let name = @utf8.decode(name[:], ignore_bom=false) catch {
       _ => return Err("filesystem member paths must be UTF-8")
     }
-    let base = path_dir(archive_path)
+    let base = path_dir(
+      if windows {
+        windows_path(archive_path)
+      } else {
+        archive_path
+      },
+    )
     let path = joined_path(base, name)
     if !allow_parent_paths {
       match validate_path(base, path) {

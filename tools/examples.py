@@ -8,6 +8,7 @@ import argparse
 import gzip
 import io
 import json
+import re
 from pathlib import Path
 import subprocess
 import tarfile
@@ -74,6 +75,10 @@ def cli(exe, command, names, expected):
 
 
 def verify_cli(exe):
+    version = re.search(r'^version\s*=\s*"([^"]+)"', (ROOT / "moon.mod").read_text(encoding="utf-8"), re.M).group(1)
+    reported = subprocess.run([str(exe), "--version"], capture_output=True, check=True, timeout=30).stdout
+    assert reported.decode("utf-8").strip() == "moonar " + version
+    print(f"CLI version matches module metadata: {version}")
     document = cli(exe, "inspect", ["bundle-before.a"], 0)
     assert [e["name_display"] for e in document["members"]] == ["config.txt", "assets.bin"]
     assert [e["size"] for e in document["members"]] == [11, 3]

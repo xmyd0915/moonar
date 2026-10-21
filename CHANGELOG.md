@@ -1,5 +1,20 @@
 # Changes
 
+## 0.6.1 — 2026-10-21
+
+- Preserve POSIX filenames containing literal backslashes instead of treating
+  them as Windows directory separators during creation, extraction or thin I/O.
+- Retain Windows drive roots and POSIX roots when locating archive directories;
+  avoid creating a UNC path when joining a current-drive root and a member name.
+- Normalize Windows filesystem arguments using the host's canonical path syntax,
+  retain drive-relative semantics, and preserve literal archive rename values.
+- Keep reported output paths in their original argument spelling and avoid
+  filesystem access for help/version commands.
+- Add native/Node path regressions, packaged public CLI consumers, command-version
+  consistency checks, and distribution license/documentation checks.
+
+Public method signatures and portable thin-member path rules are unchanged.
+
 ## 0.6.0 — 2026-10-21
 
 - Discover archive symbols from LLVM bitcode carrying an embedded version-3

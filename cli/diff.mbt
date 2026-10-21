@@ -4,6 +4,7 @@ fn load_diff_input(
   path : String,
   read : (String) -> Result[Bytes, String],
   validate_path : (String, String) -> Result[Unit, String],
+  windows : Bool,
 ) -> Result[(@ar.ArchiveSnapshot, @ar.Archive?), Reply] {
   let bytes = match read(path) {
     Ok(bytes) => bytes
@@ -27,7 +28,13 @@ fn load_diff_input(
     }
     return match
       archive.snapshot(
-        external_reader(path, request.allow_parent_paths, read, validate_path),
+        external_reader(
+          path,
+          request.allow_parent_paths,
+          read,
+          validate_path,
+          windows~,
+        ),
         max_bytes=request.max_bytes,
         allow_parent_paths=request.allow_parent_paths,
         nested_limits=nested_limits(request),
@@ -116,13 +123,15 @@ fn run_diff(
   after_path : String,
   read : (String) -> Result[Bytes, String],
   validate_path : (String, String) -> Result[Unit, String],
+  windows : Bool,
 ) -> Reply {
   let before = match
-    load_diff_input(request, before_path, read, validate_path) {
+    load_diff_input(request, before_path, read, validate_path, windows) {
     Ok(archive) => archive
     Err(reply) => return reply
   }
-  let after = match load_diff_input(request, after_path, read, validate_path) {
+  let after = match
+    load_diff_input(request, after_path, read, validate_path, windows) {
     Ok(archive) => archive
     Err(reply) => return reply
   }

@@ -1,6 +1,6 @@
 ///|
 pub fn help() -> String {
-  "MoonAr 0.6.0\nUsage: moonar list|inspect|check FILE [--json]\n       moonar check FILE --external [--allow-parent-paths] [--json]\n       moonar diff BEFORE AFTER [--logical] [--json]\n       moonar create OUT [FILES...] [--thin]\n       moonar add ARCHIVE FILES... [--at N]\n       moonar replace ARCHIVE INDEX FILE\n       moonar delete ARCHIVE INDEX...\n       moonar move ARCHIVE FROM TO\n       moonar rename ARCHIVE INDEX NAME\n       moonar extract ARCHIVE INDEX OUT\n       moonar convert ARCHIVE OUT\n       moonar index ARCHIVE\n       moonar --help | --version\nWrite options: --format gnu|gnu64|bsd|bsd64|darwin|darwin64|coff (gnu),\n               --index auto|none (auto), --output FILE, --force,\n               --preserve-metadata, --big-endian-index, --json.\nThin access: --allow-parent-paths permits external references outside the archive directory.\nMember positions are zero-based ordinary-member positions shown by list.\ninspect shows physical records; check validates metadata; --external also validates thin members.\ndiff --logical accepts regular and thin inputs and loads external contents.\nEdits retain thin storage; convert materializes thin inputs into regular archives.\nNew outputs require --force to replace an existing file; in-place edits replace atomically.\nLimits: --max-bytes N (67108864), --max-members N (100000),\n        --max-name-bytes N (67108864), --max-symbols N (1000000),\n        --max-symbol-name-bytes N (67108864),\n        --max-archive-bytes N (67108864), --max-depth N (16; maximum 64).\nUse -- before filenames beginning with '-'.\nDiff exits: 0 equal, 1 different or ambiguous, 2 invalid input or I/O error.\nMutation exits: 0 success, 2 invalid input or I/O error.\nThe CLI loads files into memory before applying parser limits.\n"
+  "MoonAr 0.6.1\nUsage: moonar list|inspect|check FILE [--json]\n       moonar check FILE --external [--allow-parent-paths] [--json]\n       moonar diff BEFORE AFTER [--logical] [--json]\n       moonar create OUT [FILES...] [--thin]\n       moonar add ARCHIVE FILES... [--at N]\n       moonar replace ARCHIVE INDEX FILE\n       moonar delete ARCHIVE INDEX...\n       moonar move ARCHIVE FROM TO\n       moonar rename ARCHIVE INDEX NAME\n       moonar extract ARCHIVE INDEX OUT\n       moonar convert ARCHIVE OUT\n       moonar index ARCHIVE\n       moonar --help | --version\nWrite options: --format gnu|gnu64|bsd|bsd64|darwin|darwin64|coff (gnu),\n               --index auto|none (auto), --output FILE, --force,\n               --preserve-metadata, --big-endian-index, --json.\nThin access: --allow-parent-paths permits external references outside the archive directory.\nMember positions are zero-based ordinary-member positions shown by list.\ninspect shows physical records; check validates metadata; --external also validates thin members.\ndiff --logical accepts regular and thin inputs and loads external contents.\nEdits retain thin storage; convert materializes thin inputs into regular archives.\nNew outputs require --force to replace an existing file; in-place edits replace atomically.\nLimits: --max-bytes N (67108864), --max-members N (100000),\n        --max-name-bytes N (67108864), --max-symbols N (1000000),\n        --max-symbol-name-bytes N (67108864),\n        --max-archive-bytes N (67108864), --max-depth N (16; maximum 64).\nUse -- before filenames beginning with '-'.\nDiff exits: 0 equal, 1 different or ambiguous, 2 invalid input or I/O error.\nMutation exits: 0 success, 2 invalid input or I/O error.\nThe CLI loads files into memory before applying parser limits.\n"
 }
 
 ///|
@@ -114,13 +114,28 @@ pub fn run(
   },
   canonical? : (String) -> Result[String, String] = fn(path) { Ok(path) },
 ) -> Reply {
+  let windows = if request.command is (Help | Version) {
+    false
+  } else {
+    match canonical(".") {
+      Ok(path) => windows_identity(path)
+      Err(_) => false
+    }
+  }
+  let canonical = if windows {
+    fn(path) { canonical(path).map(slash_path) }
+  } else {
+    canonical
+  }
   let path = match request.command {
     Help => return { exit_code: 0, stdout: help(), stderr: "", }
-    Version => return { exit_code: 0, stdout: "moonar 0.6.0\n", stderr: "", }
+    Version => return { exit_code: 0, stdout: "moonar 0.6.1\n", stderr: "", }
     Diff(before, after) =>
-      return run_diff(request, before, after, read, validate_path)
+      return run_diff(request, before, after, read, validate_path, windows)
     Manage(options) =>
-      return run_manage(request, options, read, write, validate_path, canonical)
+      return run_manage(
+        request, options, read, write, validate_path, canonical, windows,
+      )
     Inspect(path) | List(path) | Check(path) => path
   }
   let bytes = match read(path) {
@@ -128,7 +143,7 @@ pub fn run(
     Err(message) => return error_reply("IO001", message, request.json_output, 2)
   }
   if bytes.has_prefix(b"!<thin>\n"[:]) {
-    return inspect_thin(request, path, bytes, read, validate_path)
+    return inspect_thin(request, path, bytes, read, validate_path, windows)
   }
   let archive = match parse_input(request, bytes) {
     Ok(archive) => archive
@@ -172,6 +187,7 @@ fn inspect_thin(
   bytes : Bytes,
   read : (String) -> Result[Bytes, String],
   validate_path : (String, String) -> Result[Unit, String],
+  windows : Bool,
 ) -> Reply {
   let archive = match
     @ar.parse_thin(
@@ -201,7 +217,13 @@ fn inspect_thin(
   let external_bytes = if request.external {
     match
       archive.validate_members(
-        external_reader(path, request.allow_parent_paths, read, validate_path),
+        external_reader(
+          path,
+          request.allow_parent_paths,
+          read,
+          validate_path,
+          windows~,
+        ),
         max_bytes=request.max_bytes,
         allow_parent_paths=request.allow_parent_paths,
         nested_limits=nested_limits(request),
