@@ -1,5 +1,15 @@
 # Changes
 
+## 0.6.3 — 2026-10-23
+
+- Run the independent registry consumer before inspecting downloaded files:
+  `moon update` refreshes metadata, while the build resolves dependencies.
+- Allow `verify_registry.py --archive PATH` to compare an installed release
+  against an existing ZIP without rebuilding it from a changed checkout.
+
+Archive and CLI behavior are unchanged from 0.6.2. The registry workflow is
+checked by installing a published package and comparing all 99 distributed files.
+
 ## 0.6.2 — 2026-10-23
 
 - Validate directly constructed public CLI requests before any filesystem

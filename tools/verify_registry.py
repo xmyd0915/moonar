@@ -52,6 +52,7 @@ def match_package(archive, provider):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moon", default=shutil.which("moon"), help="MoonBit moon executable")
+    parser.add_argument("--archive", type=Path, help="existing release ZIP (default: run moon package)")
     parser.add_argument(
         "--report", type=Path,
         help="report path (default: _build/verification/registry-consumer-VERSION.json)",
@@ -65,8 +66,11 @@ def main():
     metadata = (root / "moon.mod").read_text(encoding="utf-8")
     module = metadata_field(metadata, "name")
     version = metadata_field(metadata, "version")
-    run([moon, "package"], root)
-    archive = root / "_build/publish" / (module.replace("/", "-") + "-" + version + ".zip")
+    if args.archive is None:
+        run([moon, "package"], root)
+        archive = root / "_build/publish" / (module.replace("/", "-") + "-" + version + ".zip")
+    else:
+        archive = args.archive.resolve(strict=True)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
 
     # Keep the consumer outside the source checkout so local workspace lookup
@@ -91,15 +95,17 @@ def main():
             encoding="utf-8",
         )
         print(run([moon, "update"], consumer).strip())
+        # update refreshes the registry index; the build resolves and downloads
+        # dependencies. Do not inspect .mooncakes before that has happened.
+        print(run([
+            moon, "test", "--target", "all", "--deny-warn",
+            "--package", "verification/moonar-registry",
+        ], consumer).strip())
         provider = consumer / ".mooncakes" / module
         installed = (provider / "moon.mod").read_text(encoding="utf-8")
         if metadata_field(installed, "name") != module or metadata_field(installed, "version") != version:
             raise AssertionError("registry installed a different module or version")
         matching_files = match_package(archive, provider)
-        print(run([
-            moon, "test", "--target", "all", "--deny-warn",
-            "--package", "verification/moonar-registry",
-        ], consumer).strip())
 
     record = {
         "module": module, "version": version,

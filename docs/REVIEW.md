@@ -134,7 +134,7 @@ python tools/verify_registry.py
 本地工作区覆盖；执行同一组四后端消费者，并逐文件比较安装结果与 `moon package`
 生成的 ZIP。报告包含版本、包 SHA-256、匹配文件数和测试数，写入
 `_build/verification/registry-consumer-VERSION.json`。发行前使用 `verify_package.py`，发布后再执行
-注册表检查。两者均支持 `--moon` 和 `--report` 参数。
+注册表检查。两者均支持 `--moon` 和 `--report` 参数；`--archive PATH` 可指定已有发行 ZIP。
 
 ## 验收边界与持续集成
 
