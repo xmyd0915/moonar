@@ -95,19 +95,26 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t moonar_atomic_write(
 #ifdef _WIN32
   wchar_t *destination = moonar_wide(path);
   if (!destination) return moonar_os_error("invalid destination path", GetLastError());
-  size_t length = wcslen(destination);
-  wchar_t *temporary = (wchar_t *)malloc((length + 96) * sizeof(wchar_t));
+  // A sibling temporary file must not extend a valid destination basename past
+  // the filesystem's component or path length limit.
+  size_t directory_length = 0;
+  for (size_t i = 0; destination[i]; ++i) {
+    if (destination[i] == L'/' || destination[i] == L'\\') directory_length = i + 1;
+  }
+  if (!directory_length && destination[0] && destination[1] == L':') directory_length = 2;
+  wchar_t *temporary = (wchar_t *)malloc((directory_length + 96) * sizeof(wchar_t));
   if (!temporary) {
     free(destination);
     return moonar_message("out of memory while creating output file");
   }
   static volatile LONG sequence = 0;
+  memcpy(temporary, destination, directory_length * sizeof(wchar_t));
   HANDLE file = INVALID_HANDLE_VALUE;
   DWORD code = ERROR_FILE_EXISTS;
   for (unsigned attempt = 0; attempt < 128; ++attempt) {
     unsigned long next = (unsigned long)InterlockedIncrement(&sequence);
-    swprintf(temporary, length + 96, L"%ls.moonar-%lu-%lu-%lu.tmp",
-             destination, (unsigned long)GetCurrentProcessId(),
+    swprintf(temporary + directory_length, 96, L".moonar-%lu-%lu-%lu.tmp",
+             (unsigned long)GetCurrentProcessId(),
              (unsigned long)GetTickCount(), next);
     file = CreateFileW(temporary, GENERIC_WRITE, 0, NULL, CREATE_NEW,
                        FILE_ATTRIBUTE_NORMAL, NULL);
@@ -160,10 +167,12 @@ windows_failure:
   free(destination);
   return moonar_os_error(operation, code);
 #else
-  size_t length = strlen(path);
-  char *temporary = (char *)malloc(length + 32);
+  const char *separator = strrchr(path, '/');
+  size_t directory_length = separator ? (size_t)(separator - path) + 1 : 0;
+  char *temporary = (char *)malloc(directory_length + 32);
   if (!temporary) return moonar_message("out of memory while creating output file");
-  snprintf(temporary, length + 32, "%s.moonar-XXXXXX", path);
+  memcpy(temporary, path, directory_length);
+  snprintf(temporary + directory_length, 32, ".moonar-XXXXXX");
   int file = mkstemp(temporary);
   if (file < 0) {
     int code = errno;

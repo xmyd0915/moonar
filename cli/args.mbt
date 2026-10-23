@@ -65,7 +65,7 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     return parse_manage_args(args)
   }
   if args == ["--help"] || args == ["-h"] {
-    return Ok({
+    return checked_request({
       command: Help,
       json_output: false,
       max_bytes: 67108864,
@@ -81,7 +81,7 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     })
   }
   if args == ["--version"] {
-    return Ok({
+    return checked_request({
       command: Version,
       json_output: false,
       max_bytes: 67108864,
@@ -132,12 +132,12 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
       }
       json_output = true
     } else if arg == "--logical" {
-      if args[0] != "diff" || logical {
+      if logical {
         return Err("--logical is allowed once, only with diff")
       }
       logical = true
     } else if arg == "--external" {
-      if args[0] != "check" || external {
+      if external {
         return Err("--external is allowed once, only with check")
       }
       external = true
@@ -180,18 +180,9 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
     }
     i += 1
   }
-  if max_depth > 64 {
-    return Err("--max-depth must be between 0 and 64")
-  }
   let expected_paths = if args[0] == "diff" { 2 } else { 1 }
-  if paths.length() != expected_paths ||
-    paths.any(fn(path) { path.is_empty() || path.contains("\u0000") }) {
+  if paths.length() != expected_paths {
     return Err("this command needs exactly \{expected_paths} input file(s)")
-  }
-  if allow_parent_paths && !external && !logical {
-    return Err(
-      "--allow-parent-paths requires check --external or diff --logical",
-    )
   }
   let command = if args[0] == "diff" {
     Diff(paths[0], paths[1])
@@ -202,7 +193,7 @@ pub fn parse_args(args : Array[String]) -> Result[Request, String] {
   } else {
     Check(paths[0])
   }
-  Ok({
+  checked_request({
     command,
     json_output,
     max_bytes,

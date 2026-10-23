@@ -347,6 +347,32 @@ def verify_path_spellings(label, command, root, place):
         print(f"PASS {label}: POSIX literal backslashes, thin parent directories and portable-reference rejection")
 
 
+def verify_long_output_names(label, command, root, place):
+    # Keep Windows destinations below MAX_PATH while leaving too little room
+    # for a suffix on the destination. POSIX exercises the component limit.
+    length = 245 - len(str(place)) - 1 if os.name == "nt" else os.pathconf(place, "PC_NAME_MAX")
+    assert length >= 80, place
+    archive = place / ("a" * (length - 2) + ".a")
+    output = place / ("b" * (length - 4) + ".bin")
+    # Establish that the filesystem itself accepts the destination spelling.
+    archive.write_bytes(b"original")
+    archive.unlink()
+    source = place / "long-name-input.bin"
+    source.write_bytes(b"long filename payload")
+    run(command, ["create", archive, source], root)
+    original = archive.read_bytes()
+    run(command, ["create", archive, "--json"], root, expected=2)
+    assert archive.read_bytes() == original
+    run(command, ["rename", archive, 0, "renamed.bin"], root)
+    assert ordinary_names(command, root, archive) == [b"renamed.bin"]
+    run(command, ["extract", archive, 0, output], root)
+    assert output.read_bytes() == source.read_bytes()
+    run(command, ["create", archive, "--force"], root)
+    run(command, ["check", archive], root)
+    assert not list(place.glob("*.moonar-*"))
+    print(f"PASS {label}: long output names, atomic replacement, no-clobber failure and temporary cleanup")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moonar", required=True)
@@ -368,6 +394,7 @@ def main():
             verify_external_queries(label, command, root, place)
             verify_nested_dependencies(label, command, root, place)
             verify_path_spellings(label, command, root, place)
+            verify_long_output_names(label, command, root, place)
 
 
 if __name__ == "__main__":

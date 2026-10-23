@@ -81,12 +81,7 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
           let value = args[i]
           match arg {
             "--output" => output = Some(value)
-            "--index" => {
-              if value != "auto" && value != "none" {
-                return Err("--index must be auto or none")
-              }
-              index_mode = value
-            }
+            "--index" => index_mode = value
             "--format" =>
               format = match value {
                 "gnu" => @ar.Gnu
@@ -120,33 +115,6 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
     }
     i += 1
   }
-  if max_depth > 64 {
-    return Err("--max-depth must be between 0 and 64")
-  }
-  if paths.any(p => p.is_empty() || p.contains("\u0000")) ||
-    (output is Some(p) && (p.is_empty() || p.contains("\u0000"))) {
-    return Err("paths and names must be nonempty and contain no NUL")
-  }
-  let valid_count = match operation {
-    "create" => paths.length() >= 1
-    "add" | "delete" => paths.length() >= 2
-    "replace" | "move" | "rename" | "extract" => paths.length() == 3
-    "convert" => paths.length() == 2
-    "index" => paths.length() == 1
-    _ => false
-  }
-  if !valid_count {
-    return Err("wrong number of arguments; use --help")
-  }
-  if thin && operation != "create" {
-    return Err("--thin is a create option; edits retain thin storage")
-  }
-  if at is Some(_) && operation != "add" {
-    return Err("--at is an add option")
-  }
-  if output is Some(_) && ["create", "convert", "extract"].contains(operation) {
-    return Err("this command supplies its output as a positional argument")
-  }
   if operation == "extract" &&
     seen
     .keys()
@@ -160,28 +128,7 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
       "extract accepts only --force, --allow-parent-paths, --json and limits",
     )
   }
-  if operation == "index" && index_mode != "auto" {
-    return Err("index requires automatic symbol discovery")
-  }
-  if !little_endian &&
-    (format == @ar.Gnu || format == @ar.Gnu64 || format == @ar.Coff) {
-    return Err("--big-endian-index requires a BSD or Darwin format")
-  }
-  if thin && format != @ar.Gnu && format != @ar.Gnu64 {
-    return Err("thin output requires gnu or gnu64")
-  }
-  let numeric_positions = match operation {
-    "replace" | "rename" | "extract" => [1]
-    "move" => [1, 2]
-    "delete" => Array::makei(paths.length() - 1, fn(i) { i + 1 })
-    _ => []
-  }
-  for position in numeric_positions {
-    if limit_number(paths[position]) is None {
-      return Err("member positions must be nonnegative integers")
-    }
-  }
-  Ok({
+  checked_request({
     command: Manage({
       operation,
       arguments: paths,

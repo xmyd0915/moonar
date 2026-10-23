@@ -70,6 +70,9 @@ python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe -
 Windows 增加大小写别名、盘符相对文件和反斜杠查询；POSIX 检查替换后权限保留，
 以及文件名和 thin 所在目录中的字面反斜杠。根目录分解和 thin 引用定位另有跨后端回归。
 路径能力因平台受限时脚本明确报出。
+长输出名称另覆盖创建、原位编辑、提取、显式覆盖与禁止覆盖：Windows 使用接近
+传统路径长度边界的合法路径，POSIX 使用文件系统允许的最大成员文件名长度；失败后检查
+原文件和临时文件清理。临时文件使用同目录独立短名。
 
 ## zlib 真实构建消费者
 
@@ -114,11 +117,24 @@ fat LTO 的原生定义无需插件即可链接运行；可用 `--gcc` 指定工
 python tools/verify_package.py
 ```
 
-脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。十项公开接口测试在四个后端运行，
+脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。十一项公开接口测试在四个后端运行，
 覆盖七种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入、thin 内容校验、嵌套引用解析与预算、COFF 双表与短导入对象、LLVM bitcode、不可变比较快照和返回数组隔离。
 验证报告写到 `_build/verification/package-consumer.json`，包含版本与包摘要。
-另检查公开 CLI 的宿主路径规则，以及许可证、来源说明和使用文档随包提供。
+另检查公开 CLI 的宿主路径规则、直接构造的错误请求在文件回调前被拒绝，以及许可证、
+来源说明和使用文档随包提供。
 基础示例脚本会核对 `--version` 与模块版本，避免发行入口出现版本偏差。
+
+当前版本已发布到 MoonCakes 后，还可执行：
+
+```sh
+python tools/verify_registry.py
+```
+
+脚本在独立临时模块中通过 `moon update` 从注册表安装当前 `moon.mod` 版本，不使用
+本地工作区覆盖；执行同一组四后端消费者，并逐文件比较安装结果与 `moon package`
+生成的 ZIP。报告包含版本、包 SHA-256、匹配文件数和测试数，写入
+`_build/verification/registry-consumer-VERSION.json`。发行前使用 `verify_package.py`，发布后再执行
+注册表检查。两者均支持 `--moon` 和 `--report` 参数。
 
 ## 验收边界与持续集成
 

@@ -1,5 +1,21 @@
 # Changes
 
+## 0.6.2 — 2026-10-23
+
+- Validate directly constructed public CLI requests before any filesystem
+  callback. Reject missing arguments, invalid selectors, unknown operations,
+  unsupported option combinations and invalid budgets with `CLI001` and exit 2.
+- Share request validation between argument parsing and execution, preventing
+  malformed API calls from panicking or unexpectedly rewriting an archive.
+- Create short, independent sibling temporary names so valid long destination
+  names remain usable for atomic creation, editing, extraction and replacement.
+- Reject impossible BSD byte-order envelopes before applying symbol budgets,
+  so an invalid alternate interpretation cannot mask a valid bounded index.
+- Add public package regressions and a reproducible MoonCakes installation
+  consumer that checks all installed package files against the local release ZIP.
+
+Public method signatures and supported archive formats are unchanged.
+
 ## 0.6.1 — 2026-10-21
 
 - Preserve POSIX filenames containing literal backslashes instead of treating

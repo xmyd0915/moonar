@@ -250,6 +250,29 @@ test "public CLI separates host path syntax from ordinary member names" {
     assert_eq(plan.members()[0].name, if windows { b"name.bin" } else { b"part\\name.bin" })
   }
 }
+
+///|
+test "public CLI rejects malformed direct requests before filesystem access" {
+  let base = @cli.parse_args(["create", "out.a", "--json"]).unwrap()
+  guard base.command is @cli.Manage(options) else { abort("create request") }
+  for invalid in [
+    { ..base, command: @cli.Manage({ ..options, arguments: [] }) },
+    { ..base, command: @cli.Manage({ ..options, operation: "unknown" }) },
+    { ..base, max_bytes: -1 },
+    { ..base, command: @cli.Manage({ ..options, operation: "move", arguments: ["in.a", "0", "bad"] }) },
+  ] {
+    let callbacks : Array[String] = []
+    let reply = @cli.run(invalid,
+      fn(path) { callbacks.push("read:" + path); Ok(b"!<arch>\n") },
+      write=fn(path, _, _) { callbacks.push("write:" + path); Ok(()) },
+      canonical=fn(path) { callbacks.push("canonical:" + path); Ok(path) },
+      validate_path=fn(_, path) { callbacks.push("validate:" + path); Ok(()) })
+    assert_eq(reply.exit_code, 2)
+    assert_eq(reply.stderr, "")
+    assert_true(reply.stdout.contains("CLI001"))
+    assert_true(callbacks.is_empty())
+  }
+}
 '''
 
 
@@ -399,6 +422,7 @@ def main():
             "ThinArchive.resolve_member", "ThinArchive.member_sources", "NestedLimits", "WriteFormat.Coff",
             "LLVM bitcode version-3 symbol discovery",
             "cli.run host path semantics",
+            "cli.run direct request validation before filesystem access",
         ],
         "license_and_documentation_present": True,
     }

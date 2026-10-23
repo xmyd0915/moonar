@@ -49,6 +49,10 @@ extern "js" fn io_stat(path : String) -> IoFileStat = "statSync"
 extern "js" fn io_chmod(fd : Int, mode : Int) -> Unit = "fchmodSync"
 
 ///|
+#module("node:path")
+extern "js" fn io_dirname(path : String) -> String = "dirname"
+
+///|
 extern "js" fn atomic_write_js(
   open : (String, String) -> Int,
   write : (Int, Bytes, Int, Int) -> Int,
@@ -59,16 +63,17 @@ extern "js" fn atomic_write_js(
   unlink : (String) -> Unit,
   stat : (String) -> IoFileStat,
   chmod : (Int, Int) -> Unit,
+  dirname : (String) -> String,
   path : String,
   bytes : Bytes,
   overwrite : Bool,
 ) -> String =
-  #| (open, write, fsync, close, rename, link, unlink, stat, chmod, path, bytes, overwrite) => {
+  #| (open, write, fsync, close, rename, link, unlink, stat, chmod, dirname, path, bytes, overwrite) => {
   #|   if (!path || path.includes("\0")) return "invalid output path";
   #|   let temporary, fd, ownsTemporary = false;
   #|   try {
   #|     for (let attempt = 0; attempt < 128; attempt++) {
-  #|       temporary = `${path}.moonar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.tmp`;
+  #|       temporary = `${dirname(path)}/.moonar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.tmp`;
   #|       try { fd = open(temporary, "wx"); ownsTemporary = true; break; }
   #|       catch (error) { if (error.code !== "EEXIST") throw error; }
   #|     }
@@ -108,7 +113,7 @@ pub fn atomic_write(
   }
   let error = atomic_write_js(
     io_open, io_write, io_fsync, io_close, io_rename, io_link, io_unlink, io_stat,
-    io_chmod, path, data, overwrite,
+    io_chmod, io_dirname, path, data, overwrite,
   )
   if error.is_empty() {
     Ok(())

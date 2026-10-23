@@ -7,7 +7,7 @@ MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它�
 以及读取 `.deb` 的外层容器。也支持 Microsoft COFF `.lib` 静态库与导入库。
 核心库直接处理字节，不依赖外部 `ar` 程序。
 
-**0.6.1 提供 LLVM bitcode 自动索引与跨平台文件操作**：Clang 的 full LTO、ThinLTO 对象可参与创建、编辑、
+**0.6.2 完善公共接口校验、BSD 索引与长文件名操作**。Clang 的 full LTO、ThinLTO 对象可参与创建、编辑、
 thin 归档和格式转换，支持原始 bitcode 与 Mach-O 包装。保留 COFF 双 linker-member、
 bigobj、短导入对象、ELF、Mach-O 以及 GNU 直接/嵌套 thin 的完整工作流。
 
@@ -104,7 +104,8 @@ moonar diff libthin.a libpacked.a --logical
 - `--big-endian-index` 选择 BSD/Darwin 大端索引，默认小端。
 - `--json` 输出结构化结果；文件名以 `-` 开头时使用 `--`。
 
-文件修改在完成校验后写入同目录临时文件，再原子发布。失败保留原文件；新建默认禁止覆盖，
+文件修改在完成校验后写入同目录的独立短名临时文件，再原子发布，避免给长输出文件名追加后缀。
+失败保留原文件；新建默认禁止覆盖，
 原位编辑允许替换。输出不能覆盖提取源或 thin 依赖成员。native 和 Node.js CLI 提供文件
 写入能力；核心库及不依赖文件系统的命令逻辑支持 native、JavaScript、wasm、wasm-gc。
 
@@ -124,7 +125,7 @@ COFF 两份 linker-member 会交叉校验并以第二份的排序映射公开。
 ## 作为 MoonBit 库使用
 
 ```sh
-moon add xmyd0915/moonar@0.6.1
+moon add xmyd0915/moonar@0.6.2
 ```
 
 在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
@@ -167,7 +168,7 @@ LLVM bitcode 使用内嵌的版本 3 符号摘要表，读取编译器生成的�
 分组和共享预算。LLVM IR 指令、优化与代码生成由链接工具链处理。
 
 明确的格式边界：缺少支持的摘要表的旧 bitcode、GCC slim LTO 插件解析、fat Mach-O 和
-AIX big archive 不在 0.6.1 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
+AIX big archive 不在 0.6.2 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
 仍可使用。库调用方也可提供显式符号映射。
 `check` 校验容器和索引结构，`--external` 另检查 thin 外部成员，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
 内层 tar 解压、链接器实现和包签名校验不属于本库职责。
@@ -195,6 +196,8 @@ GNU/LLVM 验证需要 GNU ar/nm、LLVM ar、C 编译器和 Python 3.9+；Windows
 LTO 验证使用 Clang、LLD、LLVM ar，或 `verify_lto.py --zig PATH`：对照符号映射并完成
 普通/thin 创建、编辑、物化与混合原生对象的实际链接运行；嵌套引用先物化再交给 LLD。
 发行 ZIP 另通过独立 MoonBit 消费模块验证公开接口。
+已发布版本可运行 `python tools/verify_registry.py`，从 MoonCakes 安装后执行同一组公共接口
+消费者，并核对安装内容与本地发行 ZIP 的全部文件。详见[发布包验证](docs/REVIEW.md#发布包公共接口)。
 
 [Linux / Windows CI](.github/workflows/ci.yml) 固定编译器与 core
 `0.10.14+7d59c7ec9`，运行四后端测试、真实文件操作和独立消费者检查。

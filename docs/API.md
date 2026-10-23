@@ -17,6 +17,13 @@ reported output paths retain their original argument spelling. Help and version
 do not invoke filesystem callbacks. Portable thin-member restrictions are separate
 from host directory names, so POSIX parent directories may contain backslashes.
 
+`cli.run` also accepts directly constructed `Request` and `ManageOptions` values.
+It checks command arguments, member selectors, paths, resource limits and option
+combinations before calling `read`, `write`, `canonical` or `validate_path`.
+Invalid requests return exit code 2 and `CLI001`; JSON mode returns the usual
+error object. For management requests, `allow_parent_paths` and the nested
+`allow_parent` option must agree. `parse_args` uses the same validation rules.
+
 ## JSON version 1
 
 All JSON results contain `schema_version: 1`. Field ordering is not contractual.
@@ -121,6 +128,7 @@ analyzes object-code equivalence.
 | AR011–AR015 | Thin reference, path, loading or declared-size error; see WRITING.md |
 | WR001–WR006 | Editing, metadata, budget, index policy, symbol or object error |
 | OB001–OB003 | Object structure, unsupported format or symbol discovery budget |
+| CLI001 | Invalid directly constructed CLI request; no filesystem callbacks |
 | IO001 | CLI filesystem read failure; no offset |
 | IO002 | CLI filesystem publication failure |
 | IO003 | CLI unsafe output alias or path resolution failure |
@@ -128,7 +136,8 @@ analyzes object-code equivalence.
 The offset identifies the field or position where parsing stopped, not always the
 byte that originally caused the corruption. JSON diff parse errors also contain
 an `input` field identifying the failing path. Both success and failure in JSON
-mode are one JSON value followed by a newline. Argument errors use stderr text.
+mode are one JSON value followed by a newline. Command-line argument parsing
+errors use stderr text; direct `cli.run` request errors honor `json_output`.
 
 Parsing validates container structure and symbol index targets. It does not
 parse object internals to establish that referenced definitions exist, or verify

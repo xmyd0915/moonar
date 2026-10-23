@@ -146,9 +146,6 @@ fn bsd_symbol_candidate(
     reject("AR009", start, "invalid BSD ranlib table byte count")
   }
   let count = table_bytes / (width * 2)
-  if count > max_symbols {
-    reject("AR008", start, "symbol count limit exceeded")
-  }
   let string_size_pos = start + width + table_bytes
   let string_start = string_size_pos + width
   let string_size = symbol_number(
@@ -161,6 +158,12 @@ fn bsd_symbol_candidate(
   )
   let string_end = string_start + string_size
   symbol_padding(data, string_end, end, 7)
+  // Discard an impossible byte-order envelope before charging its count.
+  // Otherwise a malformed alternate interpretation can mask the valid one
+  // merely because its byte-swapped count exceeds the caller's budget.
+  if count > max_symbols {
+    reject("AR008", start, "symbol count limit exceeded")
+  }
   let references : Array[(Int, Int, Int)] = []
   let wanted : Map[Int, Unit] = Map([])
   for n = 0; n < count; n = n + 1 {
