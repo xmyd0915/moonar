@@ -123,8 +123,9 @@ pub fn atomic_write(
 }
 
 ///|
-#module("node:fs")
-extern "js" fn io_realpath(path : String) -> String = "realpathSync"
+// Use the OS implementation so macOS resolves the stored spelling of names.
+extern "js" fn io_realpath(path : String) -> String =
+  #| path => process.getBuiltinModule("node:fs").realpathSync.native(path)
 
 ///|
 #external

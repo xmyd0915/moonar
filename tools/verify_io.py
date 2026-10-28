@@ -210,6 +210,13 @@ def verify_alias_protection(label, command, root, place):
         assert data.read_bytes() == b"preserve external contents"
         assert thin.read_bytes() == thin_original
         print(f"PASS {label}: case-insensitive extraction, self-reference and external-member output protection")
+    else:
+        upper_archive.write_bytes(b"separate destination")
+        assert not upper_archive.samefile(archive)
+        run(command, ["extract", archive, 0, upper_archive, "--force"], root)
+        assert upper_archive.read_bytes() == data.read_bytes()
+        assert archive.read_bytes() == original
+        print(f"PASS {label}: case-sensitive files with different names remain separate destinations")
     assert not list(place.glob("*.moonar-*"))
     print(f"PASS {label}: canonical aliases cannot overwrite the source archive or a thin member")
 

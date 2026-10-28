@@ -74,7 +74,7 @@ def markdown(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moon", default=shutil.which("moon"))
-    parser.add_argument("--benchmark", type=Path, help="use an already-built release native driver")
+    parser.add_argument("--benchmark", type=Path, help="use an already-built driver (build profile is caller-provided)")
     parser.add_argument("--sizes", type=lambda s: bounded_list(s, 3, 10000), default=[100, 1000, 10000])
     parser.add_argument("--depths", type=lambda s: bounded_list(s, 1, 16), default=[1, 4, 16])
     parser.add_argument("--samples", type=int, default=3)
@@ -107,7 +107,8 @@ def main():
         "logical_cpus": os.cpu_count(), "python_version": platform.python_version(),
         "moon_toolchain": run([args.moon, "version", "--all"], root).strip(),
         "driver_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
-        "build_profile": "release", "samples": args.samples, "iterations_per_sample": args.iterations,
+        "build_profile": "caller-provided" if args.benchmark else "release",
+        "samples": args.samples, "iterations_per_sample": args.iterations,
         "memory_calibration": probe,
         "warmups_per_sample": 1, "payload_bytes": args.payload_bytes,
         "timing": "monotonic operation loop; excludes fixture setup, process launch and JSON output",
