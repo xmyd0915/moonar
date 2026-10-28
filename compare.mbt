@@ -84,15 +84,15 @@ pub extend Comparison with Eq::{equal, not_equal}
 pub extend Comparison with Debug::{to_repr}
 
 ///|
-fn record_keys(entries : Array[Member]) -> Array[(String, Int)] {
-  let counts : Map[String, Int] = Map([])
+fn record_keys(entries : Array[Member]) -> Array[((Int, Bytes), Int)] {
+  let counts : Map[(Int, Bytes), Int] = Map([])
   entries.map(fn(entry) {
-    let prefix = match entry.kind {
-      Regular => "r:"
-      SymbolTable => "s:"
-      NameTable => "n:"
+    let kind = match entry.kind {
+      Regular => 0
+      SymbolTable => 1
+      NameTable => 2
     }
-    let base = prefix + entry.name_hex()
+    let base = (kind, entry.name)
     let occurrence = counts.get(base).unwrap_or(0) + 1
     counts[base] = occurrence
     (base, occurrence)
@@ -103,6 +103,8 @@ fn record_keys(entries : Array[Member]) -> Array[(String, Int)] {
 priv struct RecordMatches {
   pairs : Array[Int?]
   ambiguities : Array[MatchAmbiguity]
+  left_keys : Array[((Int, Bytes), Int)]
+  right_keys : Array[((Int, Bytes), Int)]
 }
 
 ///|
@@ -123,8 +125,8 @@ fn match_records(
   let bytes_equal = before.data == after.data
   let left_keys = record_keys(before.records)
   let right_keys = record_keys(after.records)
-  let left_groups : Map[String, Array[Int]] = Map([])
-  let right_groups : Map[String, Array[Int]] = Map([])
+  let left_groups : Map[(Int, Bytes), Array[Int]] = Map([])
+  let right_groups : Map[(Int, Bytes), Array[Int]] = Map([])
   for i, (key, _) in left_keys {
     if !logical || before.records[i].kind == Regular {
       match left_groups.get(key) {
@@ -143,7 +145,7 @@ fn match_records(
   }
   let pairs : Array[Int?] = Array::make(before.records.length(), None)
   let ambiguities : Array[MatchAmbiguity] = []
-  let seen : Map[String, Unit] = Map([])
+  let seen : Map[(Int, Bytes), Unit] = Map([])
   let used = Array::make(after.records.length(), false)
   for i, (key, _) in left_keys {
     if seen.get(key) is Some(_) ||
@@ -153,6 +155,16 @@ fn match_records(
     seen[key] = ()
     let left = left_groups.get(key).unwrap()
     let right = right_groups.get(key).unwrap_or([])
+    if right.is_empty() {
+      continue
+    }
+    // Unique names have only one possible pairing. Payload equality is checked
+    // by compare_records, so building content buckets would repeat the scan.
+    if left.length() == 1 && right.length() == 1 {
+      pairs[left[0]] = Some(right[0])
+      used[right[0]] = true
+      continue
+    }
     let buckets : Map[BytesView, Array[Int]] = Map([])
     let counts : Map[BytesView, Int] = Map([])
     let cursors : Map[BytesView, Int] = Map([])
@@ -203,7 +215,7 @@ fn match_records(
       })
     }
   }
-  { pairs, ambiguities, }
+  { pairs, ambiguities, left_keys, right_keys, }
 }
 
 ///|
@@ -213,8 +225,8 @@ fn compare_records(
   logical : Bool,
   matches : RecordMatches,
 ) -> Comparison {
-  let left_keys = record_keys(before.records)
-  let right_keys = record_keys(after.records)
+  let left_keys = matches.left_keys
+  let right_keys = matches.right_keys
   let matched = Array::make(after.records.length(), false)
   let changes : Array[MemberChange] = []
   let mut order_changed = false

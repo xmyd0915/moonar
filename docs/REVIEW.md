@@ -140,11 +140,12 @@ fat LTO 的原生定义无需插件即可链接运行；可用 `--gcc` 指定工
 python tools/verify_package.py
 ```
 
-脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。十一项公开接口测试在四个后端运行，
+脚本先生成实际发行 ZIP，再从 ZIP 建立独立消费模块。十二项公开接口测试在四个后端运行，
 覆盖七种格式、自动索引、thin 创建/编辑/加载/物化、普通成员插入、thin 内容校验、嵌套引用解析与预算、COFF 双表与短导入对象、LLVM bitcode、不可变比较快照和返回数组隔离。
 验证报告写到 `_build/verification/package-consumer.json`，包含版本与包摘要。
 另检查公开 CLI 的宿主路径规则、直接构造的错误请求在文件回调前被拒绝，以及许可证、
 来源说明和使用文档随包提供。
+嵌套批量消费者另以精确名称预算检查重复路径复用，并检查减少一个字节时返回预算错误。
 基础示例脚本会核对 `--version` 与模块版本，避免发行入口出现版本偏差。
 
 当前版本已发布到 MoonCakes 后，还可执行：
@@ -166,7 +167,7 @@ native/Node 文件检查和公共 API 示例；Windows 另执行 MSVC 静态库�
 Apple 工具链消费者；Linux 安装明确的 GNU/LLVM/Clang/GCC 工具链，运行所有参考与 zlib 流程。
 提交对应结果见 [Actions](https://github.com/xmyd0915/moonar/actions)。
 
-三平台均执行 `python tools/benchmark.py` 的 36 组基准并保存 JSON/Markdown 报告。
+三平台均执行 `python tools/benchmark.py` 的 39 组基准并保存 JSON/Markdown 报告。
 场景检查、计时与内存口径见 [性能基准](PERFORMANCE.md)。每次成功运行的 `verification-*`
 artifact 同时保存公共包消费者和平台专项报告，保留 30 天；发行报告随 Release 长期提供。
 

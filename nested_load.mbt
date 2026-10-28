@@ -47,6 +47,7 @@ priv struct NestedLoadContext {
   allow_parent_paths : Bool
   max_depth : Int
   payload_limit : Int
+  path_limit : Int
   mut bytes_left : Int
   mut members_left : Int
   mut names_left : Int
@@ -80,6 +81,7 @@ fn nested_context(
     loader,
     allow_parent_paths,
     payload_limit,
+    path_limit: limits.max_name_bytes,
     max_depth: limits.max_depth,
     bytes_left: limits.max_bytes,
     members_left: limits.max_members,
@@ -288,7 +290,9 @@ fn NestedLoadContext::resolve(
       let resolved = self.resolve(
         target,
         archive.references.get(index),
-        nested_child_path(path, child, self.names_left, root_offset),
+        // A previously charged path can be visited after names_left reaches zero.
+        // Bound the temporary join by the total limit; resolve charges new paths.
+        nested_child_path(path, child, self.path_limit, root_offset),
         root_offset,
         load_payload~,
       )

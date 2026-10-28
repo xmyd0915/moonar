@@ -19,7 +19,7 @@ import statistics
 import subprocess
 
 
-REGULAR = ("parse", "edit", "duplicate_compare")
+REGULAR = ("parse", "edit", "duplicate_compare", "unique_compare")
 NESTED = ("nested_validate", "nested_materialize", "nested_compare")
 
 
@@ -75,6 +75,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--moon", default=shutil.which("moon"))
     parser.add_argument("--benchmark", type=Path, help="use an already-built driver (build profile is caller-provided)")
+    parser.add_argument("--cases", nargs="+", choices=REGULAR + NESTED,
+                        help="run only the selected workloads (default: all)")
     parser.add_argument("--sizes", type=lambda s: bounded_list(s, 3, 10000), default=[100, 1000, 10000])
     parser.add_argument("--depths", type=lambda s: bounded_list(s, 1, 16), default=[1, 4, 16])
     parser.add_argument("--samples", type=int, default=3)
@@ -108,6 +110,7 @@ def main():
         "moon_toolchain": run([args.moon, "version", "--all"], root).strip(),
         "driver_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
         "build_profile": "caller-provided" if args.benchmark else "release",
+        "cases": [case for case in REGULAR + NESTED if not args.cases or case in args.cases],
         "samples": args.samples, "iterations_per_sample": args.iterations,
         "memory_calibration": probe,
         "warmups_per_sample": 1, "payload_bytes": args.payload_bytes,
@@ -118,6 +121,8 @@ def main():
     }
     jobs = [(case, n, 1) for n in args.sizes for case in REGULAR]
     jobs += [(case, n, depth) for n in args.sizes for depth in args.depths for case in NESTED]
+    if args.cases:
+        jobs = [job for job in jobs if job[0] in args.cases]
     for case, members, depth in jobs:
         samples = []
         for _ in range(args.samples):

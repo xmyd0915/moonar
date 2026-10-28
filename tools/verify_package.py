@@ -200,6 +200,36 @@ test "public nested references preserve offsets and resolve through bounded shar
 }
 
 ///|
+test "public nested batch operations reuse an exactly budgeted dependency path" {
+  let child = write_ok(write_ok(@ar.ThinArchiveBuilder::from_members([
+    @ar.ThinWriteMember::new(b"leaf.o", 3),
+  ])).write())
+  let parsed_child = parse_ok(@ar.parse_thin(child))
+  let target = parsed_child.get_member(parsed_child.member_count() - 1).unwrap()
+  let outer = parse_ok(@ar.parse_thin(write_ok(write_ok(@ar.ThinArchiveBuilder::from_members([
+    @ar.ThinWriteMember::new(b"dir/inner.a", 3, archive_member_offset=Some(target.header_offset)),
+    @ar.ThinWriteMember::new(b"dir/inner.a", 3, archive_member_offset=Some(target.header_offset)),
+  ])).write())))
+  let mut parsed_name_bytes = 0
+  for i in 0..<parsed_child.member_count() {
+    parsed_name_bytes += parsed_child.get_member(i).unwrap().name.length()
+  }
+  let exact = 11 + 10 + parsed_name_bytes
+  let limits = @ar.NestedLimits::new(max_name_bytes=exact)
+  let loader = fn(path, _) {
+    if path == b"dir/inner.a" { Ok(child) }
+    else if path == b"dir/leaf.o" { Ok(b"abc") }
+    else { Err("unexpected dependency") }
+  }
+  assert_eq(parse_ok(outer.validate_members(loader, nested_limits=limits)), 6)
+  assert_eq(parse_ok(outer.member_sources(loader, nested_limits=limits)), [b"dir/inner.a", b"dir/leaf.o"])
+  let packed = parse_ok(outer.materialize(loader, nested_limits=limits))
+  let ordinary = parse_ok(@ar.parse(write_ok(packed.write())))
+  assert_true(parse_ok(outer.snapshot(loader, nested_limits=limits)).compare_logical(ordinary.snapshot()).content_equal)
+  assert_true(outer.validate_members(loader, nested_limits=@ar.NestedLimits::new(max_name_bytes=exact - 1)) is Err({ code: "AR008", .. }))
+}
+
+///|
 test "public short import discovery and COFF dual indexes round trip" {
   let object = b"\x00\x00\xff\xff\x00\x00\x64\x86\x00\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x04\x00entry\x00x.dll\x00"
   match @ar.symbols_from_object(object) {

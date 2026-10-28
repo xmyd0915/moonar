@@ -7,7 +7,7 @@ MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它�
 以及读取 `.deb` 的外层容器。也支持 Microsoft COFF `.lib` 静态库与导入库。
 核心库直接处理字节，不依赖外部 `ar` 程序。
 
-**0.7.0 增加 macOS 本机消费者与可复现性能基准**，并完善 Node 的大小写路径覆盖保护。
+**0.7.1 优化归档比较并修复嵌套 thin 精确预算处理**，提供三平台 39 组性能基准和 macOS 本机消费者。
 Clang 的 full LTO、ThinLTO 对象可参与创建、编辑、
 thin 归档和格式转换，支持原始 bitcode 与 Mach-O 包装。保留 COFF 双 linker-member、
 bigobj、短导入对象、ELF、Mach-O 以及 GNU 直接/嵌套 thin 的完整工作流。
@@ -127,7 +127,7 @@ COFF 两份 linker-member 会交叉校验并以第二份的排序映射公开。
 ## 作为 MoonBit 库使用
 
 ```sh
-moon add xmyd0915/moonar@0.7.0
+moon add xmyd0915/moonar@0.7.1
 ```
 
 在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
@@ -170,7 +170,7 @@ LLVM bitcode 使用内嵌的版本 3 符号摘要表，读取编译器生成的�
 分组和共享预算。LLVM IR 指令、优化与代码生成由链接工具链处理。
 
 明确的格式边界：缺少支持的摘要表的旧 bitcode、GCC slim LTO 插件解析、fat Mach-O 和
-AIX big archive 不在 0.7.0 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
+AIX big archive 不在 0.7.1 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
 仍可使用。库调用方也可提供显式符号映射。
 `check` 校验容器和索引结构，`--external` 另检查 thin 外部成员，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
 内层 tar 解压、链接器实现和包签名校验不属于本库职责。
@@ -210,7 +210,7 @@ LTO 验证使用 Clang、LLD、LLVM ar，或 `verify_lto.py --zig PATH`：对照
 `0.10.14+7d59c7ec9`，运行四后端测试、真实文件操作和独立消费者检查。
 GNU/LLVM、Python 与 C 编译器仅用于构建或验证；核心库只依赖 MoonBit core。
 
-性能基准覆盖 100/1000/10000 个成员、重名比较，以及深度 1/4/16 的嵌套 thin，共 36 组场景。
+性能基准覆盖 100/1000/10000 个成员、唯一名称与重名比较，以及深度 1/4/16 的嵌套 thin，共 39 组场景。
 每组检查语义结果和缓存加载次数，报告操作耗时的中位数及波动、整个进程的峰值驻留内存。
 运行参数、测量范围和报告入口见 [性能基准](docs/PERFORMANCE.md)。
 
@@ -224,6 +224,7 @@ GNU/LLVM、Python 与 C 编译器仅用于构建或验证；核心库只依赖 M
 嵌套容器另用 `NestedLimits` 累计限制字节、记录、展开名称和符号；同路径容器每次批量操作
 只加载解析一次。CLI 的 `--max-archive-bytes` 默认 64 MiB，`--max-depth` 默认 16、最大 64。
 嵌套路径与所解析容器的成员名共用名称预算；COFF 两份索引均计入符号数及名称预算。
+同一已解析来源路径在一次批量操作中只计费一次，重复经过该路径不额外消耗名称预算。
 
 thin 内容检查与快照对每个输入的全部外部成员累计使用字节预算，重复引用分别计费。
 CLI 先读取完整文件再检查预算；比较、输出和对象发现需要额外内存。当前接口使用内存输入，

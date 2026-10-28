@@ -104,11 +104,11 @@ fn regular_workload(kind : String, count : Int, size : Int) -> Workload raise {
       assert_eq(check.get_member(count - 1).unwrap().name, b"file0.o")
       fn() raise { operation().length() }
     }
-    "duplicate_compare" => {
+    "duplicate_compare" | "unique_compare" => {
       let entries = builder.members()
       let reversed = Array::makei(count, fn(i) { entries[count - i - 1] })
       reversed[count / 2] = @ar.WriteMember::new(
-        b"same.o",
+        reversed[count / 2].name,
         Bytes::make(size, b'\xff'),
       )
       let after = parsed(
@@ -129,7 +129,11 @@ fn regular_workload(kind : String, count : Int, size : Int) -> Workload raise {
   {
     run,
     input_bytes: data.length() *
-    (if kind == "duplicate_compare" { 2 } else { 1 }),
+    (if kind == "duplicate_compare" || kind == "unique_compare" {
+      2
+    } else {
+      1
+    }),
   }
 }
 

@@ -1,5 +1,22 @@
 # Changes
 
+## 0.7.1 — 2026-10-28
+
+- Fix repeated nested thin paths being rejected after their shared name budget
+  is exhausted. Already charged paths remain usable; a new path exceeding the
+  remaining budget is rejected before its loader runs.
+- Group comparison records by raw name bytes and record kind, reuse occurrence
+  keys across matching and change generation, and avoid content buckets when a
+  name has exactly one member on each side.
+- Preserve duplicate-content pairing, ambiguity reporting, non-UTF-8 name
+  identity and separation of ordinary members from same-named index records.
+- Add a unique-name comparison benchmark and workload selection through
+  `--cases`; the three-platform default matrix now contains 39 workloads.
+- Exercise exact nested name budgets through the independent package and
+  registry consumers, alongside the existing macOS and linker integrations.
+
+Public library signatures and supported archive formats are unchanged.
+
 ## 0.7.0 — 2026-10-28
 
 - Run native macOS Apple Silicon consumers with Apple Clang, libtool, ar and nm:

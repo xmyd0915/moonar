@@ -55,6 +55,8 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
 ### 比较
 
 成员按类型和原始名称分组，优先匹配完整内容相同的项，再按出现次序处理剩余项。
+名称分组直接使用原始字节键，配对阶段的出现序号复用于差异生成。两侧唯一名称直接配对，
+在差异生成阶段检查载荷，避免构建多余的内容哈希桶。
 无法唯一确定身份的组写入 `ambiguities`。字节视图避免复制载荷，哈希碰撞后仍检查完整字节。
 `bytes_equal` 包含全部头部与填充字节；
 `order_changed` 只考虑两侧已配对记录的相对顺序。内容与元数据的变化标志针对修改项，
@@ -96,7 +98,7 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
   静态库并运行压缩解压；替换对象及物化后重新链接运行。
 - `tools/verify_lto.py` 对照 LLVM 摘要映射，验证 full/ThinLTO 编辑、thin 物化、混合原生对象
   与真实链接运行；另检查 GCC slim 拒绝及 fat 对象原生回退。
-- `tools/benchmark.py` 驱动 36 组带语义检查的 release native 测量，记录原始时间样本和
+- `tools/benchmark.py` 驱动 39 组带语义检查的 release native 测量，记录原始时间样本和
   进程峰值驻留内存，独立探针检查内存单位；详见 [测量方法](PERFORMANCE.md)。
 - Linux、Windows 和 macOS Apple Silicon CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
   GNU/LLVM 对照，以及 `dpkg-deb --info` 检查 Debian 示例。

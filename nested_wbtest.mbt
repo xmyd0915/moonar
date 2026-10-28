@@ -131,6 +131,84 @@ test "nested thin chains keep directory context and metadata without loading man
 }
 
 ///|
+test "repeated nested paths consume the exact name budget only once" {
+  let outer = nested_thin(b"dir/inner.a", 8, 3, copies=2)
+  let inner = b"!<thin>\n" + thin_header("leaf.o/", 3)
+  let calls : Array[Bytes] = []
+  let loader = fn(path, _) {
+    calls.push(path)
+    if path == b"dir/inner.a" {
+      Ok(inner)
+    } else if path == b"dir/leaf.o" {
+      Ok(b"abc")
+    } else {
+      Err("unexpected dependency")
+    }
+  }
+  // Source paths (11 + 10 bytes) plus the parsed container name (6 bytes).
+  let limits = NestedLimits::new(max_name_bytes=27)
+  assert_eq(outer.validate_members(loader, nested_limits=limits), Ok(6))
+  assert_eq(calls, [b"dir/inner.a", b"dir/leaf.o", b"dir/leaf.o"])
+  calls.clear()
+  assert_eq(
+    outer.member_sources(loader, nested_limits=limits),
+    Ok([b"dir/inner.a", b"dir/leaf.o"]),
+  )
+  assert_eq(calls, [b"dir/inner.a"])
+  let packed = outer.materialize(loader, nested_limits=limits).unwrap()
+  assert_eq(packed.members().map(e => (e.name, e.data)), [
+    (b"leaf.o", b"abc"),
+    (b"leaf.o", b"abc"),
+  ])
+  let ordinary = parsed(writer_ok(packed.write()))
+  assert_true(
+    outer
+    .snapshot(loader, nested_limits=limits)
+    .unwrap()
+    .compare_logical(ordinary.snapshot()).content_equal,
+  )
+  calls.clear()
+  assert_true(
+    outer.validate_members(
+      loader,
+      nested_limits=NestedLimits::new(max_name_bytes=26),
+    )
+    is Err({ code: "AR008", .. }),
+  )
+  assert_eq(calls, [b"dir/inner.a"])
+}
+
+///|
+test "a new nested path still fails before its loader when the shared budget is exhausted" {
+  let outer = thin_parsed(
+    writer_ok(
+      thin_writer_plan([
+        ThinWriteMember::new(b"dir/inner.a", 3, archive_member_offset=Some(8)),
+        ThinWriteMember::new(b"dir/inner.a", 3, archive_member_offset=Some(68)),
+      ]).write(),
+    ),
+  )
+  let inner = b"!<thin>\n" +
+    thin_header("leaf.o/", 3) +
+    thin_header("other.o/", 3)
+  let calls : Array[Bytes] = []
+  let result = outer.validate_members(
+    fn(path, _) {
+      calls.push(path)
+      if path == b"dir/inner.a" {
+        Ok(inner)
+      } else {
+        Ok(b"abc")
+      }
+    },
+    // 11-byte container path, 13 bytes of parsed names, first 10-byte leaf path.
+    nested_limits=NestedLimits::new(max_name_bytes=34),
+  )
+  assert_true(result is Err({ code: "AR008", .. }))
+  assert_eq(calls, [b"dir/inner.a", b"dir/leaf.o"])
+}
+
+///|
 test "nested cycles depth limits invalid paths and nested parse offsets stay bounded" {
   let cycle = nested_thin(b"cycle.a", 78, 3)
   let bytes = writer_ok(writer_ok(cycle.edit()).write())
