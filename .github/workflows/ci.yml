@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-15, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -52,6 +52,9 @@ jobs:
       - name: Verify MSVC static and import library consumers
         if: runner.os == 'Windows'
         run: python tools/verify_windows.py --moonar _build/native/debug/build/cmd/main/main.exe
+      - name: Verify native Apple toolchain consumers
+        if: runner.os == 'macOS'
+        run: python tools/verify_macos.py --moonar _build/native/debug/build/cmd/main/main.exe
       - name: Run public API consumer
         run: moon run examples/read_deb --target native
       - name: Check example Debian package with dpkg
@@ -81,3 +84,12 @@ jobs:
         run: moon package --list
       - name: Verify packaged public API consumers
         run: python tools/verify_package.py
+      - name: Measure checked native workloads
+        run: python tools/benchmark.py
+      - name: Retain verification and benchmark reports
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verification-${{ matrix.os }}
+          path: _build/verification/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,15 @@
+import {
+  "xmyd0915/moonar" @ar,
+  "moonbitlang/core/bench",
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/x/sys",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+options(
+  "native-stub": [ "memory.c" ],
+)
