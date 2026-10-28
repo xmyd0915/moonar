@@ -26,6 +26,7 @@
 | `cmd/main/` | native/Node 文件接口、原子发布、真实路径检查与命令行入口 |
 | `examples/read_deb/` | 通过公共 API 读取 Debian 包外层的示例 |
 | `examples/archive_workflow/` | 创建、编辑、thin 加载和静态库写出的公共 API 消费者 |
+| `benchmarks/` | native 公共 API 基准驱动与操作系统峰值内存计量 |
 | `tools/` | 示例生成与 GNU/LLVM 对照验证 |
 
 解析库接收完整的 `Bytes`，不访问文件系统。CLI 通过可注入的读取、写入和路径函数调用库，
@@ -85,6 +86,8 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
 - `tools/verify_cli.py` 从真实对象完成全部编辑命令、六种写出布局、自动索引、
   直接与嵌套 thin32/64 创建、重定位与物化；检查链接运行及可用工具下的 Mach-O 链接。
 - `tools/verify_windows.py` 通过 MSVC 验证 COFF 双表、bigobj、短导入对象，静态与 DLL 消费者实际链接运行。
+- `tools/verify_macos.py` 通过 Apple 工具链编译原生对象，核对四种 BSD/Darwin 布局与完整编辑、
+  直接和嵌套 thin 物化，实际执行 16 个链接消费者。
 - `tools/verify_io.py` 在 native 与 Node 检查原子发布、并发、Unicode、禁止覆盖、
   失败保留、真实路径范围、输出别名保护与长输出名称。
 - `tools/verify_registry.py` 从 MoonCakes 安装当前发行版本，执行四后端公共接口消费者，
@@ -93,7 +96,9 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
   静态库并运行压缩解压；替换对象及物化后重新链接运行。
 - `tools/verify_lto.py` 对照 LLVM 摘要映射，验证 full/ThinLTO 编辑、thin 物化、混合原生对象
   与真实链接运行；另检查 GCC slim 拒绝及 fat 对象原生回退。
-- Linux 和 Windows CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
+- `tools/benchmark.py` 驱动 36 组带语义检查的 release native 测量，记录原始时间样本和
+  进程峰值驻留内存，独立探针检查内存单位；详见 [测量方法](PERFORMANCE.md)。
+- Linux、Windows 和 macOS Apple Silicon CI 运行四个后端的检查与测试、原生构建和示例。Linux 额外运行
   GNU/LLVM 对照，以及 `dpkg-deb --info` 检查 Debian 示例。
 
 对照过程处理了以下工具行为：
@@ -104,7 +109,8 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
    临时目录中的提取文件，避免终端输出转换影响结果。
 3. GNU 长名称表可以包含与索引标识同名的普通文件。解析时保留名称引用的普通成员身份，
    不在解析长名称后重新按字符串分类；写出时强制采用长名称表表示这些成员。
-4. Windows 大小写路径和目录联接可能指向同一文件。输出保护比较真实路径，
+4. Windows 及 macOS 默认卷的大小写路径、目录别名可能指向同一文件。Node 适配器使用
+   `realpathSync.native` 获取系统真实路径，要求 Node.js 20.16+ 或 22.3+。输出保护比较真实路径，
    同时检查 thin 原始依赖和编辑后的依赖，防止强制输出覆盖对象或提取源。
 
 这些检查覆盖已列出的布局与输入，不能据此推断全部历史 ar 变体、对象格式或链接行为均受支持。

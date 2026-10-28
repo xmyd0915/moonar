@@ -1,5 +1,23 @@
 # Changes
 
+## 0.7.0 — 2026-10-28
+
+- Run native macOS Apple Silicon consumers with Apple Clang, libtool, ar and nm:
+  four BSD/Darwin layouts, complete archive edits, thin materialization and 16
+  linked program executions with checked results.
+- Resolve Node filesystem paths through the native OS realpath implementation,
+  preserving overwrite protection for case aliases on macOS. Keep distinct
+  destinations usable on case-sensitive filesystems. Node CLI requires 20.16+
+  or 22.3+ for the built-in module accessor.
+- Add 36 checked release-native benchmarks covering up to 10000 members,
+  duplicate-name comparison and shared thin containers through depth 16.
+- Record raw timing samples, median/range, process peak resident memory,
+  toolchain and executable identity. Calibrate memory units in a separate probe.
+- Run the complete test and benchmark matrix on Linux, Windows and macOS;
+  retain machine-readable reports with CI artifacts and release assets.
+
+Public library signatures and supported archive formats are unchanged.
+
 ## 0.6.3 — 2026-10-23
 
 - Run the independent registry consumer before inspecting downloaded files:

@@ -1,6 +1,6 @@
 name = "xmyd0915/moonar"
 
-version = "0.6.3"
+version = "0.7.0"
 
 readme = "README.md"
 

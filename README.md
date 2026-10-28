@@ -7,7 +7,8 @@ MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它�
 以及读取 `.deb` 的外层容器。也支持 Microsoft COFF `.lib` 静态库与导入库。
 核心库直接处理字节，不依赖外部 `ar` 程序。
 
-**0.6.3 完善公共接口校验、BSD 索引与长文件名操作**。Clang 的 full LTO、ThinLTO 对象可参与创建、编辑、
+**0.7.0 增加 macOS 本机消费者与可复现性能基准**，并完善 Node 的大小写路径覆盖保护。
+Clang 的 full LTO、ThinLTO 对象可参与创建、编辑、
 thin 归档和格式转换，支持原始 bitcode 与 Mach-O 包装。保留 COFF 双 linker-member、
 bigobj、短导入对象、ELF、Mach-O 以及 GNU 直接/嵌套 thin 的完整工作流。
 
@@ -22,7 +23,7 @@ moon update
 moon build --target native --deny-warn
 ```
 
-生成的命令位于 `_build/native/debug/build/cmd/main/main.exe`，Linux 也使用此文件名。
+生成的命令位于 `_build/native/debug/build/cmd/main/main.exe`，Linux 和 macOS 也使用此文件名。
 以下用 `moonar` 指代该命令。将两个已有对象创建为带索引的静态库：
 
 ```sh
@@ -108,6 +109,7 @@ moonar diff libthin.a libpacked.a --logical
 失败保留原文件；新建默认禁止覆盖，
 原位编辑允许替换。输出不能覆盖提取源或 thin 依赖成员。native 和 Node.js CLI 提供文件
 写入能力；核心库及不依赖文件系统的命令逻辑支持 native、JavaScript、wasm、wasm-gc。
+Node.js CLI 使用系统原生真实路径解析，要求 Node.js 20.16+ 或 22.3+。
 
 文件系统路径按宿主规则处理：Windows 支持盘符根目录、反斜杠分隔及盘符相对路径；
 POSIX 文件名中的字面反斜杠会保留。归档成员的 `rename` 名称保持原始字节含义，thin
@@ -125,7 +127,7 @@ COFF 两份 linker-member 会交叉校验并以第二份的排序映射公开。
 ## 作为 MoonBit 库使用
 
 ```sh
-moon add xmyd0915/moonar@0.6.3
+moon add xmyd0915/moonar@0.7.0
 ```
 
 在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
@@ -168,7 +170,7 @@ LLVM bitcode 使用内嵌的版本 3 符号摘要表，读取编译器生成的�
 分组和共享预算。LLVM IR 指令、优化与代码生成由链接工具链处理。
 
 明确的格式边界：缺少支持的摘要表的旧 bitcode、GCC slim LTO 插件解析、fat Mach-O 和
-AIX big archive 不在 0.6.3 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
+AIX big archive 不在 0.7.0 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
 仍可使用。库调用方也可提供显式符号映射。
 `check` 校验容器和索引结构，`--external` 另检查 thin 外部成员，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
 内层 tar 解压、链接器实现和包签名校验不属于本库职责。
@@ -186,9 +188,14 @@ python tools/verify_zlib.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_windows.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_lto.py --moonar _build/native/debug/build/cmd/main/main.exe
 python tools/verify_package.py
+python tools/benchmark.py
 ```
 
 GNU/LLVM 验证需要 GNU ar/nm、LLVM ar、C 编译器和 Python 3.9+；Windows 专项使用 MSVC。
+macOS Apple Silicon 使用 Xcode 命令行工具运行
+`python tools/verify_macos.py --moonar _build/native/debug/build/cmd/main/main.exe`：
+对照 Apple libtool、ar 与 nm，覆盖四种 BSD/Darwin 布局的全部编辑命令、GNU32/64 thin 和嵌套
+thin 物化，并实际执行 16 个链接消费者。保留元数据后核对与 Apple 参考库的完整逻辑比较。
 嵌套 thin 与 GNU ar 对照，物化结果再由 LLVM 消费。真实项目验证固定使用
 **zlib 1.3.1**：校验源码摘要，编译对象，用 MoonAr 分别创建普通及 thin 静态库，链接执行
 压缩/解压往返，再替换对象并重新链接执行。源码在临时目录处理，不随 MoonAr 分发。
@@ -199,9 +206,13 @@ LTO 验证使用 Clang、LLD、LLVM ar，或 `verify_lto.py --zig PATH`：对照
 已发布版本可运行 `python tools/verify_registry.py`，从 MoonCakes 安装后执行同一组公共接口
 消费者，并核对安装内容与本地发行 ZIP 的全部文件。详见[发布包验证](docs/REVIEW.md#发布包公共接口)。
 
-[Linux / Windows CI](.github/workflows/ci.yml) 固定编译器与 core
+[Linux / Windows / macOS Apple Silicon CI](.github/workflows/ci.yml) 固定编译器与 core
 `0.10.14+7d59c7ec9`，运行四后端测试、真实文件操作和独立消费者检查。
 GNU/LLVM、Python 与 C 编译器仅用于构建或验证；核心库只依赖 MoonBit core。
+
+性能基准覆盖 100/1000/10000 个成员、重名比较，以及深度 1/4/16 的嵌套 thin，共 36 组场景。
+每组检查语义结果和缓存加载次数，报告操作耗时的中位数及波动、整个进程的峰值驻留内存。
+运行参数、测量范围和报告入口见 [性能基准](docs/PERFORMANCE.md)。
 
 ## 资源与文档
 
@@ -221,6 +232,7 @@ CLI 先读取完整文件再检查预算；比较、输出和对象发现需要�
 - [读写、thin、自动符号发现与错误](docs/WRITING.md)
 - [通用库范围、交付阶段与验收标准](docs/ROADMAP.md)
 - [API 与 JSON](docs/API.md)、[代码结构](docs/DEVELOPMENT.md)
+- [性能基准与测量方法](docs/PERFORMANCE.md)
 - [复现指南](docs/REVIEW.md)、[来源说明](ORIGINS.md)、[版本记录](CHANGELOG.md)
 
 项目使用 [MIT 许可证](LICENSE)。

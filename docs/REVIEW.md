@@ -2,6 +2,7 @@
 
 从仓库根目录执行。需要 MoonBit `0.10.14+7d59c7ec9`、C 编译器和 Python 3.9+。
 独立工具验证另需 GNU ar/nm、LLVM ar；真实项目脚本使用 GCC。
+Node.js CLI 要求 Node.js 20.16+ 或 22.3+；macOS 专项使用 Apple Silicon 和 Xcode 命令行工具。
 
 ## 构建与基础测试
 
@@ -36,6 +37,7 @@ python tools/verify_cli.py --moonar _build/native/debug/build/cmd/main/main.exe 
 支持 `--ar`、`--nm`、`--cc`、`--llvm-ar` 显式指定工具。完整 CLI 脚本在有 Clang 时
 额外生成 Mach-O 对象；提供 `--zig` 可验证四种 BSD/Darwin 布局的 Mach-O 链接。
 跨目标 Mach-O 链接产物在 Windows/Linux 上不执行，不能把链接成功表述为本机运行成功。
+macOS 上的本机执行入口见下节。
 
 GNU/LLVM 对照使用临时目录实际提取二进制，避免 Windows 旧 GNU ar 的标准输出换行转换。
 Darwin 声明在载荷内的填充保留；BSD/Darwin 原始对象符号独立于归档映射作参照。
@@ -56,6 +58,26 @@ python tools/verify_windows.py --moonar _build/native/debug/build/cmd/main/main.
 嵌套 thin 由 `verify_cli.py` 与 GNU ar 双向验证，物化后的普通归档另由 LLVM 读取。
 内部测试覆盖继续指向 thin 的链、循环、精确偏移与元数据，文件测试覆盖传递依赖保护。
 
+## macOS 本机编译与运行
+
+```sh
+python tools/verify_macos.py --moonar _build/native/debug/build/cmd/main/main.exe
+```
+
+脚本只接受 macOS 宿主，使用 `xcrun` 调用 Apple Clang、libtool、ar、nm 和链接器。
+不传交叉编译目标，链接后直接运行本机程序并核对标准输出：
+
+1. Apple libtool 创建参考库，核对符号映射并执行返回 42 的消费者。
+2. MoonAr 分别创建 BSD32/64、Darwin32/64 库，核对 Apple 工具列举、提取与符号结果。
+3. 每种布局完成替换、移动、重命名、插入、删除和重建索引，再链接执行核对结果从 42 变为 44。
+4. 提取核对对象字节，将编辑结果转换为 Darwin 并再次运行；预算失败后原文件保持不变。
+5. GNU32/64 thin 编辑后物化为 Darwin 并执行；Apple 参考库作为嵌套 thin 输入，保留元数据后
+   核对逻辑相等，再物化并执行。
+
+共执行 16 个消费者；报告 `_build/verification/macos-consumer.json` 记录实际平台、架构、
+Apple 编译器、MoonAr 版本、可执行文件摘要和各次运行结果。CI 使用 `macos-15` Apple Silicon。
+此入口验证原生 Mach-O 对象；LLVM bitcode 的 LTO 消费者使用后文独立脚本。
+
 ## 文件发布与路径回归
 
 ```sh
@@ -67,7 +89,8 @@ python tools/verify_io.py --moonar _build/native/debug/build/cmd/main/main.exe -
 真实路径范围、允许父目录访问、提取源和 thin 依赖的输出别名保护。
 另外验证 `check --external`、thin/普通归档直接逻辑比较、容器相同而外部内容改变、
 缺失和大小错误，以及重复引用累计预算。
-Windows 增加大小写别名、盘符相对文件和反斜杠查询；POSIX 检查替换后权限保留，
+不区分大小写的文件系统检查大小写别名；区分大小写时核对两个名称仍可独立写入。
+Windows 增加盘符相对文件和反斜杠查询；POSIX 检查替换后权限保留，
 以及文件名和 thin 所在目录中的字面反斜杠。根目录分解和 thin 引用定位另有跨后端回归。
 路径能力因平台受限时脚本明确报出。
 长输出名称另覆盖创建、原位编辑、提取、显式覆盖与禁止覆盖：Windows 使用接近
@@ -138,9 +161,14 @@ python tools/verify_registry.py
 
 ## 验收边界与持续集成
 
-[CI](../.github/workflows/ci.yml) 在 Linux/Windows 跑四后端测试、native/Node 文件检查和
-公共 API 示例；Windows 另执行 MSVC 静态库和导入库消费者；Linux 安装明确的 GNU/LLVM/Clang/GCC 工具链，运行所有参考与 zlib 流程。
+[CI](../.github/workflows/ci.yml) 在 Linux、Windows 和 macOS Apple Silicon 跑四后端测试、
+native/Node 文件检查和公共 API 示例；Windows 另执行 MSVC 静态库和导入库消费者，macOS 执行
+Apple 工具链消费者；Linux 安装明确的 GNU/LLVM/Clang/GCC 工具链，运行所有参考与 zlib 流程。
 提交对应结果见 [Actions](https://github.com/xmyd0915/moonar/actions)。
+
+三平台均执行 `python tools/benchmark.py` 的 36 组基准并保存 JSON/Markdown 报告。
+场景检查、计时与内存口径见 [性能基准](PERFORMANCE.md)。每次成功运行的 `verification-*`
+artifact 同时保存公共包消费者和平台专项报告，保留 30 天；发行报告随 Release 长期提供。
 
 结构检查与对象发现承担不同职责：`check` 验证容器和索引引用，自动发现验证所支持的对象
 符号结构；实际可链接性由消费者检查。错误输入不被静默跳过。JSON `list` 的普通成员序号

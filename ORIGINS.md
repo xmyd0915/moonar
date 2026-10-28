@@ -45,6 +45,10 @@ MoonAr 使用 [MIT 许可证](LICENSE)。解析与比较代码依据公开格式
 以上依赖由 MoonBit 工具链解析，不将依赖源码复制进本仓库。
 GNU binutils、LLVM 和 Python 作为独立验证程序运行，源码和二进制均不随项目分发。
 Windows 专项验证另调用本机 MSVC 编译、归档、链接和运行自编写的 C 样本，不分发工具链。
+macOS 专项通过 Xcode 命令行工具编译、归档、链接并运行本项目编写的 C 样本，不分发 Apple 工具链。
+`benchmarks/` 的输入生成器和内存计量适配器由本项目实现，使用 MIT 许可证。
+峰值内存使用系统接口：Windows `PeakWorkingSetSize`、POSIX `getrusage`；数据单位由独立
+64 MiB 探针检查。基准不包含第三方项目输入，测量方法见 [PERFORMANCE](docs/PERFORMANCE.md)。
 CI 使用固定提交的 GitHub Actions 和固定版本的 MoonBit 工具链。
 
 ## 示例与测试数据
