@@ -100,7 +100,8 @@ def verify(exe, cwd):
         packed = fmt + "-packed.a"
         cli("convert", thin, packed, "--format", "darwin")
         execute(packed, 44, fmt + "-materialized")
-    cli("create", "nested.a", "reference.a", "--thin")
+    # Retain Apple's mode fields when comparing complete logical metadata.
+    cli("create", "nested.a", "reference.a", "--thin", "--preserve-metadata")
     cli("check", "nested.a", "--external")
     cli("diff", "nested.a", "reference.a", "--logical")
     cli("convert", "nested.a", "nested-packed.a", "--format", "darwin")
