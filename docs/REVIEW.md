@@ -1,12 +1,14 @@
 # 复现指南
 
-从仓库根目录执行。需要 MoonBit `0.10.14+7d59c7ec9`、C 编译器和 Python 3.9+。
+从仓库根目录执行。需要 moonc 0.10.16 或更高版本、C 编译器和 Python 3.9+。
+CI 固定编译器与 core `0.10.16+b1a0e846e`；使用相同版本可复现其工具链环境。
 独立工具验证另需 GNU ar/nm、LLVM ar；真实项目脚本使用 GCC。
 Node.js CLI 要求 Node.js 20.16+ 或 22.3+；macOS 专项使用 Apple Silicon 和 Xcode 命令行工具。
 
 ## 构建与基础测试
 
 ```sh
+python tools/verify_toolchain.py --expected-version 0.10.16+b1a0e846e
 moon update
 moon fmt --check
 moon check --target all --deny-warn
@@ -19,6 +21,8 @@ moon run examples/read_deb --target native
 
 四个后端为 native、JavaScript、wasm、wasm-gc。基础示例检查普通读取、截断定位、
 元数据与内容差异、Debian 外层成员；预期数据见 [示例说明](../examples/README.md)。
+工具链检查会拒绝低于 0.10.16 或与指定构建不同的编译器，并将实际版本写入
+`_build/verification/toolchain.json`。只检查最低版本时省略 `--expected-version`。
 
 ## 独立格式与完整编辑流程
 
@@ -169,7 +173,7 @@ Apple 工具链消费者；Linux 安装明确的 GNU/LLVM/Clang/GCC 工具链，
 
 三平台均执行 `python tools/benchmark.py` 的 39 组基准并保存 JSON/Markdown 报告。
 场景检查、计时与内存口径见 [性能基准](PERFORMANCE.md)。每次成功运行的 `verification-*`
-artifact 同时保存公共包消费者和平台专项报告，保留 30 天；发行报告随 Release 长期提供。
+artifact 同时保存工具链版本、公共包消费者和平台专项报告，保留 30 天；发行报告随 Release 长期提供。
 
 结构检查与对象发现承担不同职责：`check` 验证容器和索引引用，自动发现验证所支持的对象
 符号结构；实际可链接性由消费者检查。错误输入不被静默跳过。JSON `list` 的普通成员序号

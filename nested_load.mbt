@@ -2,22 +2,22 @@
 /// Aggregate limits for archives fetched while resolving GNU archive-offset
 /// references. They are separate from the selected external-payload byte limit.
 pub(all) struct NestedLimits {
-  max_bytes : Int
-  max_members : Int
-  max_name_bytes : Int
-  max_symbols : Int
-  max_symbol_name_bytes : Int
-  max_depth : Int
+  max_bytes : Int32
+  max_members : Int32
+  max_name_bytes : Int32
+  max_symbols : Int32
+  max_symbol_name_bytes : Int32
+  max_depth : Int32
 } derive(Eq, Debug)
 
 ///|
 pub fn NestedLimits::new(
-  max_bytes? : Int = 67108864,
-  max_members? : Int = 100000,
-  max_name_bytes? : Int = 67108864,
-  max_symbols? : Int = 1000000,
-  max_symbol_name_bytes? : Int = 67108864,
-  max_depth? : Int = 16,
+  max_bytes~ : Int32 = 67108864,
+  max_members~ : Int32 = 100000,
+  max_name_bytes~ : Int32 = 67108864,
+  max_symbols~ : Int32 = 1000000,
+  max_symbol_name_bytes~ : Int32 = 67108864,
+  max_depth~ : Int32 = 16,
 ) -> NestedLimits {
   {
     max_bytes,
@@ -37,34 +37,34 @@ pub extend NestedLimits with Debug::{to_repr}
 
 ///|
 priv enum NestedArchive {
-  RegularContainer(Archive, Map[Int, Int])
-  ThinContainer(ThinArchive, Map[Int, Int])
+  RegularContainer(Archive, Map[Int32, Int32])
+  ThinContainer(ThinArchive, Map[Int32, Int32])
 }
 
 ///|
 priv struct NestedLoadContext {
-  loader : (Bytes, Int) -> Result[Bytes, String]
+  loader : (Bytes, Int32) -> Result[Bytes, String]
   allow_parent_paths : Bool
-  max_depth : Int
-  payload_limit : Int
-  path_limit : Int
-  mut bytes_left : Int
-  mut members_left : Int
-  mut names_left : Int
-  mut symbols_left : Int
-  mut symbol_names_left : Int
+  max_depth : Int32
+  payload_limit : Int32
+  path_limit : Int32
+  mut bytes_left : Int32
+  mut members_left : Int32
+  mut names_left : Int32
+  mut symbols_left : Int32
+  mut symbol_names_left : Int32
   cache : Map[Bytes, NestedArchive]
-  active : Array[(Bytes, Int)]
+  active : Array[(Bytes, Int32)]
   sources : Array[Bytes]
   source_set : Map[Bytes, Unit]
 }
 
 ///|
 fn nested_context(
-  loader : (Bytes, Int) -> Result[Bytes, String],
+  loader : (Bytes, Int32) -> Result[Bytes, String],
   allow_parent_paths : Bool,
   limits : NestedLimits,
-  payload_limit : Int,
+  payload_limit : Int32,
 ) -> NestedLoadContext raise InvalidArchive {
   if limits.max_bytes < 0 ||
     limits.max_members < 0 ||
@@ -99,7 +99,7 @@ fn nested_context(
 fn nested_diagnostic(
   error : ParseError,
   path : Bytes,
-  root_offset : Int,
+  root_offset : Int32,
 ) -> ParseError {
   {
     ..error,
@@ -112,7 +112,7 @@ fn nested_diagnostic(
 fn NestedLoadContext::read_archive(
   self : NestedLoadContext,
   path : Bytes,
-  root_offset : Int,
+  root_offset : Int32,
 ) -> NestedArchive raise InvalidArchive {
   if self.cache.get(path) is Some(cached) {
     return cached
@@ -166,7 +166,7 @@ fn NestedLoadContext::read_archive(
   }
   self.bytes_left -= bytes.length()
   self.members_left -= archive.records.length()
-  let headers : Map[Int, Int] = Map([])
+  let headers : Map[Int32, Int32] = Map([])
   for i, entry in archive.records {
     headers[entry.header_offset] = i
     self.names_left -= entry.name.length()
@@ -192,8 +192,8 @@ fn NestedLoadContext::read_archive(
 fn nested_child_path(
   parent : Bytes,
   child : Bytes,
-  maximum : Int,
-  root_offset : Int,
+  maximum : Int32,
+  root_offset : Int32,
 ) -> Bytes raise InvalidArchive {
   let mut cursor = parent.length()
   while cursor > 0 && parent[cursor - 1] != b'/' {
@@ -209,10 +209,10 @@ fn nested_child_path(
 fn NestedLoadContext::resolve(
   self : NestedLoadContext,
   entry : Member,
-  reference : Int?,
+  reference : Int32?,
   path : Bytes,
-  root_offset : Int,
-  load_payload? : Bool = true,
+  root_offset : Int32,
+  load_payload~ : Bool = true,
 ) -> WriteMember raise InvalidArchive {
   if self.source_set.get(path) is None {
     if path.length() > self.names_left {
@@ -310,11 +310,11 @@ fn NestedLoadContext::resolve(
 /// carries the remaining archive-byte budget. The loader controls actual reads.
 pub fn ThinArchive::resolve_member(
   self : ThinArchive,
-  index : Int,
-  loader : (Bytes, Int) -> Result[Bytes, String],
-  max_bytes? : Int = 67108864,
-  allow_parent_paths? : Bool = false,
-  nested_limits? : NestedLimits = NestedLimits::new(),
+  index : Int32,
+  loader : (Bytes, Int32) -> Result[Bytes, String],
+  max_bytes~ : Int32 = 67108864,
+  allow_parent_paths~ : Bool = false,
+  nested_limits~ : NestedLimits = NestedLimits::new(),
 ) -> Result[WriteMember, ParseError] {
   try {
     if max_bytes < 0 {
@@ -354,15 +354,15 @@ pub fn ThinArchive::resolve_member(
 /// opened. Useful for dependency manifests and output-alias protection.
 pub fn ThinArchive::member_sources(
   self : ThinArchive,
-  loader : (Bytes, Int) -> Result[Bytes, String],
-  allow_parent_paths? : Bool = false,
-  nested_limits? : NestedLimits = NestedLimits::new(),
+  loader : (Bytes, Int32) -> Result[Bytes, String],
+  allow_parent_paths~ : Bool = false,
+  nested_limits~ : NestedLimits = NestedLimits::new(),
 ) -> Result[Array[Bytes], ParseError] {
   try {
     let context = nested_context(
       loader, allow_parent_paths, nested_limits, 2147483647,
     )
-    let paths : Array[(Int, Bytes)] = []
+    let paths : Array[(Int32, Bytes)] = []
     for index, entry in self.archive.records {
       if entry.kind == Regular {
         let path = match self.member_path(index, allow_parent_paths~) {

@@ -12,9 +12,9 @@ pub(all) struct MemberChange {
   change : ChangeKind
   name : Bytes
   member_kind : MemberKind
-  occurrence : Int
-  before_index : Int?
-  after_index : Int?
+  occurrence : Int32
+  before_index : Int32?
+  after_index : Int32?
   payload_changed : Bool
   metadata_changed : Bool
 } derive(Eq, Debug)
@@ -34,8 +34,8 @@ pub(all) struct Comparison {
 pub(all) struct MatchAmbiguity {
   name : Bytes
   member_kind : MemberKind
-  before_indices : Array[Int]
-  after_indices : Array[Int]
+  before_indices : Array[Int32]
+  after_indices : Array[Int32]
 } derive(Eq, Debug)
 
 ///|
@@ -84,8 +84,8 @@ pub extend Comparison with Eq::{equal, not_equal}
 pub extend Comparison with Debug::{to_repr}
 
 ///|
-fn record_keys(entries : Array[Member]) -> Array[((Int, Bytes), Int)] {
-  let counts : Map[(Int, Bytes), Int] = Map([])
+fn record_keys(entries : Array[Member]) -> Array[((Int32, Bytes), Int32)] {
+  let counts : Map[(Int32, Bytes), Int32] = Map([])
   entries.map(fn(entry) {
     let kind = match entry.kind {
       Regular => 0
@@ -101,14 +101,14 @@ fn record_keys(entries : Array[Member]) -> Array[((Int, Bytes), Int)] {
 
 ///|
 priv struct RecordMatches {
-  pairs : Array[Int?]
+  pairs : Array[Int32?]
   ambiguities : Array[MatchAmbiguity]
-  left_keys : Array[((Int, Bytes), Int)]
-  right_keys : Array[((Int, Bytes), Int)]
+  left_keys : Array[((Int32, Bytes), Int32)]
+  right_keys : Array[((Int32, Bytes), Int32)]
 }
 
 ///|
-fn payload(archive : Archive, index : Int) -> BytesView {
+fn payload(archive : Archive, index : Int32) -> BytesView {
   let entry = archive.records[index]
   archive.data[entry.data_offset:entry.data_offset + entry.size]
 }
@@ -125,8 +125,8 @@ fn match_records(
   let bytes_equal = before.data == after.data
   let left_keys = record_keys(before.records)
   let right_keys = record_keys(after.records)
-  let left_groups : Map[(Int, Bytes), Array[Int]] = Map([])
-  let right_groups : Map[(Int, Bytes), Array[Int]] = Map([])
+  let left_groups : Map[(Int32, Bytes), Array[Int32]] = Map([])
+  let right_groups : Map[(Int32, Bytes), Array[Int32]] = Map([])
   for i, (key, _) in left_keys {
     if !logical || before.records[i].kind == Regular {
       match left_groups.get(key) {
@@ -143,9 +143,9 @@ fn match_records(
       }
     }
   }
-  let pairs : Array[Int?] = Array::make(before.records.length(), None)
+  let pairs : Array[Int32?] = Array::make(before.records.length(), None)
   let ambiguities : Array[MatchAmbiguity] = []
-  let seen : Map[(Int, Bytes), Unit] = Map([])
+  let seen : Map[(Int32, Bytes), Unit] = Map([])
   let used = Array::make(after.records.length(), false)
   for i, (key, _) in left_keys {
     if seen.get(key) is Some(_) ||
@@ -165,9 +165,9 @@ fn match_records(
       used[right[0]] = true
       continue
     }
-    let buckets : Map[BytesView, Array[Int]] = Map([])
-    let counts : Map[BytesView, Int] = Map([])
-    let cursors : Map[BytesView, Int] = Map([])
+    let buckets : Map[BytesView, Array[Int32]] = Map([])
+    let counts : Map[BytesView, Int32] = Map([])
+    let cursors : Map[BytesView, Int32] = Map([])
     for j in right {
       let bytes = payload(after, j)
       match buckets.get(bytes) {
@@ -197,7 +197,7 @@ fn match_records(
     }
     let remaining_left = left.filter(fn(j) { pairs[j] is None })
     let remaining_right = right.filter(fn(j) { !used[j] })
-    let count = Int::min(remaining_left.length(), remaining_right.length())
+    let count = Int32::min(remaining_left.length(), remaining_right.length())
     if count > 0 &&
       (remaining_left.length() > 1 || remaining_right.length() > 1) {
       ambiguous = true
@@ -304,9 +304,9 @@ pub fn compare(before : Archive, after : Archive) -> Comparison {
 ///|
 fn symbol_mappings(
   archive : Archive,
-  pairs : Array[Int?]?,
-) -> Map[Bytes, Array[Int]]? {
-  let mappings : Map[Bytes, Array[Int]] = Map([])
+  pairs : Array[Int32?]?,
+) -> Map[Bytes, Array[Int32]]? {
+  let mappings : Map[Bytes, Array[Int32]] = Map([])
   for table in archive.indexes {
     for symbol in table.symbols {
       let target = match pairs {

@@ -1,28 +1,28 @@
 ///|
-pub fn cli_argument_start() -> Int {
+pub fn cli_argument_start() -> Int32 {
   2
 }
 
 ///|
 #module("node:fs")
-extern "js" fn io_open(path : String, flags : String) -> Int = "openSync"
+extern "js" fn io_open(path : String, flags : String) -> Int32 = "openSync"
 
 ///|
 #module("node:fs")
 extern "js" fn io_write(
-  fd : Int,
+  fd : Int32,
   bytes : Bytes,
-  offset : Int,
-  length : Int,
-) -> Int = "writeSync"
+  offset : Int32,
+  length : Int32,
+) -> Int32 = "writeSync"
 
 ///|
 #module("node:fs")
-extern "js" fn io_fsync(fd : Int) -> Unit = "fsyncSync"
+extern "js" fn io_fsync(fd : Int32) -> Unit = "fsyncSync"
 
 ///|
 #module("node:fs")
-extern "js" fn io_close(fd : Int) -> Unit = "closeSync"
+extern "js" fn io_close(fd : Int32) -> Unit = "closeSync"
 
 ///|
 #module("node:fs")
@@ -46,7 +46,7 @@ extern "js" fn io_stat(path : String) -> IoFileStat = "statSync"
 
 ///|
 #module("node:fs")
-extern "js" fn io_chmod(fd : Int, mode : Int) -> Unit = "fchmodSync"
+extern "js" fn io_chmod(fd : Int32, mode : Int32) -> Unit = "fchmodSync"
 
 ///|
 #module("node:path")
@@ -54,15 +54,15 @@ extern "js" fn io_dirname(path : String) -> String = "dirname"
 
 ///|
 extern "js" fn atomic_write_js(
-  open : (String, String) -> Int,
-  write : (Int, Bytes, Int, Int) -> Int,
-  fsync : (Int) -> Unit,
-  close : (Int) -> Unit,
+  open : (String, String) -> Int32,
+  write : (Int32, Bytes, Int32, Int32) -> Int32,
+  fsync : (Int32) -> Unit,
+  close : (Int32) -> Unit,
   rename : (String, String) -> Unit,
   link : (String, String) -> Unit,
   unlink : (String) -> Unit,
   stat : (String) -> IoFileStat,
-  chmod : (Int, Int) -> Unit,
+  chmod : (Int32, Int32) -> Unit,
   dirname : (String) -> String,
   path : String,
   bytes : Bytes,

@@ -8,7 +8,7 @@ pub fn canonical_path(String) -> Result[String, String]
 
 pub fn check_member_path(String, String) -> Result[Unit, String]
 
-pub fn cli_argument_start() -> Int
+pub fn cli_argument_start() -> Int32
 
 // Errors
 

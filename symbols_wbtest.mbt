@@ -1,5 +1,5 @@
 ///|
-fn word(value : Int, width : Int, little : Bool) -> Bytes {
+fn word(value : Int32, width : Int32, little : Bool) -> Bytes {
   Bytes::makei(width, fn(n) {
     let shift = (if little { n } else { width - 1 - n }) * 8
     (if shift >= 32 { 0 } else { (value >> shift) & 255 }).to_byte()
@@ -9,10 +9,10 @@ fn word(value : Int, width : Int, little : Bool) -> Bytes {
 ///|
 fn indexed_archive(
   symbol : Bytes,
-  width? : Int = 4,
-  little? : Bool = false,
-  bsd? : Bool = false,
-  target_delta? : Int = 0,
+  width~ : Int32 = 4,
+  little~ : Bool = false,
+  bsd~ : Bool = false,
+  target_delta~ : Int32 = 0,
 ) -> Bytes {
   let name = if bsd {
     if width == 4 {

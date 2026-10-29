@@ -1,5 +1,5 @@
 ///|
-fn thin_header(name : String, size : Int) -> Bytes {
+fn thin_header(name : String, size : Int32) -> Bytes {
   @utf8.encode(
     field(name, 16) +
     field("0", 12) +
@@ -20,14 +20,14 @@ fn thin_parsed(input : Bytes) -> ThinArchive raise {
 }
 
 ///|
-fn thin_with_path(path : Bytes, size? : Int = 3) -> ThinArchive raise {
+fn thin_with_path(path : Bytes, size~ : Int32 = 3) -> ThinArchive raise {
   thin_parsed(
     b"!<thin>\n" + record("//", path + b"/\n") + thin_header("/0", size),
   )
 }
 
 ///|
-fn thin_indexed(width : Int, delta? : Int = 0) -> Bytes {
+fn thin_indexed(width : Int32, delta~ : Int32 = 0) -> Bytes {
   let index_name = if width == 4 { "/" } else { "/SYM64/" }
   let names = record("//", b"directory/long_member.o/\n")
   let index_size = width * 2 + 6
@@ -174,7 +174,7 @@ test "thin parse budgets include special records and expanded path bytes" {
 test "thin loading normalizes relative paths and validates callback data" {
   let archive = thin_with_path(b"./objects//a.o")
   assert_eq(archive.member_path(1), Ok(b"objects/a.o"))
-  let calls : Array[(Bytes, Int)] = []
+  let calls : Array[(Bytes, Int32)] = []
   let loaded = archive.load_member(1, fn(path, limit) {
     calls.push((path, limit))
     Ok(b"abc")
@@ -214,7 +214,7 @@ test "thin loading normalizes relative paths and validates callback data" {
 ///|
 test "thin unsafe paths and oversized declarations never reach the loader" {
   let calls : Array[Unit] = []
-  let loader = fn(_path : Bytes, _limit : Int) -> Result[Bytes, String] {
+  let loader = fn(_path : Bytes, _limit : Int32) -> Result[Bytes, String] {
     calls.push(())
     Ok(b"abc")
   }

@@ -1,5 +1,5 @@
 ///|
-pub fn cli_argument_start() -> Int {
+pub fn cli_argument_start() -> Int32 {
   1
 }
 
@@ -8,7 +8,7 @@ pub fn cli_argument_start() -> Int {
 extern "C" fn atomic_write_native(
   path : Bytes,
   data : Bytes,
-  size : Int,
+  size : Int32,
   overwrite : Bool,
 ) -> Bytes = "moonar_atomic_write"
 

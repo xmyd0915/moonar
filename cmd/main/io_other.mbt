@@ -1,5 +1,5 @@
 ///|
-pub fn cli_argument_start() -> Int {
+pub fn cli_argument_start() -> Int32 {
   1
 }
 

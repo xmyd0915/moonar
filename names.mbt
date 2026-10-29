@@ -3,11 +3,11 @@
 // allocate a map entry and byte buffer for every name it happens to contain.
 fn gnu_names(
   data : Bytes,
-  start : Int,
-  size : Int,
-  wanted : Map[Int, Unit],
-) -> Map[Int, Bytes] raise InvalidArchive {
-  let names : Map[Int, Bytes] = Map([])
+  start : Int32,
+  size : Int32,
+  wanted : Map[Int32, Unit],
+) -> Map[Int32, Bytes] raise InvalidArchive {
+  let names : Map[Int32, Bytes] = Map([])
   let mut cursor = start
   let end = start + size
   while cursor < end {
@@ -45,11 +45,11 @@ fn gnu_names(
 ///|
 fn coff_names(
   data : Bytes,
-  start : Int,
-  size : Int,
-  wanted : Map[Int, Unit],
-) -> Map[Int, Bytes] raise InvalidArchive {
-  let result : Map[Int, Bytes] = Map([])
+  start : Int32,
+  size : Int32,
+  wanted : Map[Int32, Unit],
+) -> Map[Int32, Bytes] raise InvalidArchive {
+  let result : Map[Int32, Bytes] = Map([])
   let end = start + size
   let mut cursor = start
   while cursor < end {
@@ -95,9 +95,9 @@ fn member_kind(name : Bytes) -> MemberKind {
 ///|
 fn embedded_name_size(
   data : Bytes,
-  start : Int,
-  width : Int,
-) -> Int raise InvalidArchive {
+  start : Int32,
+  width : Int32,
+) -> Int32 raise InvalidArchive {
   if width == 0 {
     reject("AR006", start, "missing BSD name length")
   }
@@ -112,8 +112,8 @@ fn embedded_name_size(
 ///|
 fn bsd_name(
   data : Bytes,
-  start : Int,
-  width : Int,
+  start : Int32,
+  width : Int32,
 ) -> Bytes raise InvalidArchive {
   let mut end = start + width
   while end > start && data[end - 1] == b'\x00' {

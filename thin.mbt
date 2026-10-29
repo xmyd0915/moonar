@@ -4,17 +4,17 @@
 pub(all) struct ThinMember {
   name : Bytes
   kind : MemberKind
-  header_offset : Int
-  size : Int
+  header_offset : Int32
+  size : Int32
   metadata : Metadata
-  archive_member_offset : Int?
+  archive_member_offset : Int32?
 } derive(Eq, Debug)
 
 ///|
 /// GNU thin archive metadata and validated symbol references, without file I/O.
 struct ThinArchive {
   archive : Archive
-  references : Map[Int, Int]
+  references : Map[Int32, Int32]
 } derive(Debug)
 
 ///|
@@ -38,17 +38,20 @@ pub fn ThinMember::name_hex(self : ThinMember) -> String {
 
 ///|
 /// Count physical records, including inline symbol and name tables.
-pub fn ThinArchive::member_count(self : ThinArchive) -> Int {
+pub fn ThinArchive::member_count(self : ThinArchive) -> Int32 {
   self.archive.records.length()
 }
 
 ///|
-pub fn ThinArchive::byte_length(self : ThinArchive) -> Int {
+pub fn ThinArchive::byte_length(self : ThinArchive) -> Int32 {
   self.archive.data.length()
 }
 
 ///|
-pub fn ThinArchive::get_member(self : ThinArchive, index : Int) -> ThinMember? {
+pub fn ThinArchive::get_member(
+  self : ThinArchive,
+  index : Int32,
+) -> ThinMember? {
   self.archive.records
   .get(index)
   .map(entry => {
@@ -70,7 +73,7 @@ pub fn ThinArchive::symbol_indexes(self : ThinArchive) -> Array[SymbolIndex] {
 ///|
 /// Only special records have inline bytes. Regular records and invalid indices
 /// return None; use load_member to obtain an external member's contents.
-pub fn ThinArchive::inline_bytes(self : ThinArchive, index : Int) -> Bytes? {
+pub fn ThinArchive::inline_bytes(self : ThinArchive, index : Int32) -> Bytes? {
   guard self.archive.records.get(index) is Some(entry) else { return None }
   if entry.kind == Regular {
     None
@@ -82,17 +85,17 @@ pub fn ThinArchive::inline_bytes(self : ThinArchive, index : Int) -> Bytes? {
 ///|
 fn parse_thin_records(
   data : Bytes,
-  max_members : Int,
-  max_name_bytes : Int,
-) -> (Archive, Map[Int, Int]) raise InvalidArchive {
+  max_members : Int32,
+  max_name_bytes : Int32,
+) -> (Archive, Map[Int32, Int32]) raise InvalidArchive {
   if data.length() < 8 || data[:8] != b"!<thin>\n"[:] {
     reject("AR001", 0, "expected GNU thin archive magic")
   }
   let records : Array[Member] = []
-  let references : Map[Int, Int] = Map([])
-  let pending_names : Array[(Int, Int)] = []
-  let wanted_names : Map[Int, Unit] = Map([])
-  let mut long_table : (Int, Int)? = None
+  let references : Map[Int32, Int32] = Map([])
+  let pending_names : Array[(Int32, Int32)] = []
+  let wanted_names : Map[Int32, Unit] = Map([])
+  let mut long_table : (Int32, Int32)? = None
   let mut offset = 8
   while offset < data.length() {
     if records.length() >= max_members {
@@ -275,11 +278,11 @@ fn parse_thin_records(
 /// are not part of the GNU thin encoding and are rejected.
 pub fn parse_thin(
   input : Bytes,
-  max_members? : Int = 100000,
-  max_bytes? : Int = 67108864,
-  max_name_bytes? : Int = 67108864,
-  max_symbols? : Int = 1000000,
-  max_symbol_name_bytes? : Int = 67108864,
+  max_members~ : Int32 = 100000,
+  max_bytes~ : Int32 = 67108864,
+  max_name_bytes~ : Int32 = 67108864,
+  max_symbols~ : Int32 = 1000000,
+  max_symbol_name_bytes~ : Int32 = 67108864,
 ) -> Result[ThinArchive, ParseError] {
   if max_members < 0 ||
     max_bytes < 0 ||
@@ -328,8 +331,8 @@ pub fn parse_thin(
 ///|
 fn thin_relative_path(
   name : Bytes,
-  offset : Int,
-  allow_parent_paths? : Bool = false,
+  offset : Int32,
+  allow_parent_paths~ : Bool = false,
 ) -> Bytes raise InvalidArchive {
   if name.is_empty() || name[0] == b'/' {
     reject("AR012", offset, "external member path must be relative")
@@ -385,8 +388,8 @@ fn thin_relative_path(
 /// path so callers can resolve them relative to the archive directory.
 pub fn ThinArchive::member_path(
   self : ThinArchive,
-  index : Int,
-  allow_parent_paths? : Bool = false,
+  index : Int32,
+  allow_parent_paths~ : Bool = false,
 ) -> Result[Bytes, ParseError] {
   guard self.archive.records.get(index) is Some(entry) else {
     return Err({
@@ -414,11 +417,11 @@ pub fn ThinArchive::member_path(
 /// checked before calling it; returned bytes must match that size and max_bytes.
 pub fn ThinArchive::load_member(
   self : ThinArchive,
-  index : Int,
-  loader : (Bytes, Int) -> Result[Bytes, String],
-  max_bytes? : Int = 67108864,
-  allow_parent_paths? : Bool = false,
-  nested_limits? : NestedLimits = NestedLimits::new(),
+  index : Int32,
+  loader : (Bytes, Int32) -> Result[Bytes, String],
+  max_bytes~ : Int32 = 67108864,
+  allow_parent_paths~ : Bool = false,
+  nested_limits~ : NestedLimits = NestedLimits::new(),
 ) -> Result[Bytes, ParseError] {
   self
   .resolve_member(

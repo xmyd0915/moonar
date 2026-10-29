@@ -3,22 +3,22 @@
 /// archive file; size describes the external file, which is never embedded.
 pub(all) struct ThinWriteMember {
   name : Bytes
-  size : Int
+  size : Int32
   metadata : Metadata
-  archive_member_offset : Int?
+  archive_member_offset : Int32?
 } derive(Eq, Debug)
 
 ///|
 pub fn ThinWriteMember::new(
   name : Bytes,
-  size : Int,
-  metadata? : Metadata = {
+  size : Int32,
+  metadata~ : Metadata = {
     timestamp: Some(0L),
     uid: Some(0L),
     gid: Some(0L),
     mode: Some(420L),
   },
-  archive_member_offset? : Int? = None,
+  archive_member_offset~ : Int32? = None,
 ) -> ThinWriteMember {
   { name, size, metadata, archive_member_offset, }
 }
@@ -38,7 +38,7 @@ pub fn ThinArchiveBuilder::new() -> ThinArchiveBuilder {
 ///|
 fn thin_write_member_valid(
   entry : ThinWriteMember,
-  index : Int,
+  index : Int32,
 ) -> Unit raise InvalidWrite {
   if entry.archive_member_offset is Some(offset) &&
     (offset < 8 || offset % 2 != 0) {
@@ -87,7 +87,7 @@ pub fn ThinArchiveBuilder::from_members(
 }
 
 ///|
-pub fn ThinArchiveBuilder::member_count(self : ThinArchiveBuilder) -> Int {
+pub fn ThinArchiveBuilder::member_count(self : ThinArchiveBuilder) -> Int32 {
   self.members.length()
 }
 
@@ -101,7 +101,7 @@ pub fn ThinArchiveBuilder::members(
 ///|
 pub fn ThinArchiveBuilder::insert(
   self : ThinArchiveBuilder,
-  index : Int,
+  index : Int32,
   entry : ThinWriteMember,
 ) -> Result[ThinArchiveBuilder, WriteError] {
   try {
@@ -132,7 +132,7 @@ pub fn ThinArchiveBuilder::append(
 ///|
 pub fn ThinArchiveBuilder::replace(
   self : ThinArchiveBuilder,
-  index : Int,
+  index : Int32,
   entry : ThinWriteMember,
 ) -> Result[ThinArchiveBuilder, WriteError] {
   try {
@@ -151,7 +151,7 @@ pub fn ThinArchiveBuilder::replace(
 ///|
 pub fn ThinArchiveBuilder::remove(
   self : ThinArchiveBuilder,
-  index : Int,
+  index : Int32,
 ) -> Result[ThinArchiveBuilder, WriteError] {
   if index < 0 || index >= self.members.length() {
     return Err({
@@ -169,8 +169,8 @@ pub fn ThinArchiveBuilder::remove(
 /// Move an entry to its final zero-based position.
 pub fn ThinArchiveBuilder::move_member(
   self : ThinArchiveBuilder,
-  from : Int,
-  to : Int,
+  from : Int32,
+  to : Int32,
 ) -> Result[ThinArchiveBuilder, WriteError] {
   let count = self.members.length()
   if from < 0 || from >= count || to < 0 || to >= count {
@@ -191,7 +191,7 @@ pub fn ThinArchiveBuilder::move_member(
 /// must be supplied after editing; dropping an existing index is explicit.
 pub fn ThinArchive::edit(
   self : ThinArchive,
-  drop_symbol_indexes? : Bool = false,
+  drop_symbol_indexes~ : Bool = false,
 ) -> Result[ThinArchiveBuilder, WriteError] {
   if !self.archive.indexes.is_empty() && !drop_symbol_indexes {
     return Err({
@@ -223,11 +223,11 @@ pub fn ThinArchive::edit(
 /// owns base-directory resolution, symlink policy and I/O allocation.
 pub fn ThinArchive::materialize(
   self : ThinArchive,
-  loader : (Bytes, Int) -> Result[Bytes, String],
-  drop_symbol_indexes? : Bool = false,
-  allow_parent_paths? : Bool = false,
-  max_bytes? : Int = 67108864,
-  nested_limits? : NestedLimits = NestedLimits::new(),
+  loader : (Bytes, Int32) -> Result[Bytes, String],
+  drop_symbol_indexes~ : Bool = false,
+  allow_parent_paths~ : Bool = false,
+  max_bytes~ : Int32 = 67108864,
+  nested_limits~ : NestedLimits = NestedLimits::new(),
 ) -> Result[ArchiveBuilder, ParseError] {
   if !self.archive.indexes.is_empty() && !drop_symbol_indexes {
     return Err({
@@ -267,14 +267,14 @@ pub fn ThinArchive::materialize(
 /// Byte limits cover serialized archive bytes, not the external payload sizes.
 pub fn ThinArchiveBuilder::write(
   self : ThinArchiveBuilder,
-  metadata? : WriteMetadata = Deterministic,
-  symbols? : Array[WriteSymbol]? = None,
-  symbol_width? : Int = 32,
-  max_bytes? : Int = 67108864,
-  max_members? : Int = 100000,
-  max_name_bytes? : Int = 67108864,
-  max_symbols? : Int = 1000000,
-  max_symbol_name_bytes? : Int = 67108864,
+  metadata~ : WriteMetadata = Deterministic,
+  symbols~ : Array[WriteSymbol]? = None,
+  symbol_width~ : Int32 = 32,
+  max_bytes~ : Int32 = 67108864,
+  max_members~ : Int32 = 100000,
+  max_name_bytes~ : Int32 = 67108864,
+  max_symbols~ : Int32 = 1000000,
+  max_symbol_name_bytes~ : Int32 = 67108864,
 ) -> Result[Bytes, WriteError] {
   try {
     if max_bytes < 0 ||
@@ -294,7 +294,7 @@ pub fn ThinArchiveBuilder::write(
     let index_name = if symbol_width == 32 { b"/" } else { b"/SYM64/" }
     let mut total_names = 0
     let mut table_size = 0
-    let name_offsets : Map[Bytes, Int] = Map([])
+    let name_offsets : Map[Bytes, Int32] = Map([])
     let table_names : Array[Bytes] = []
     for index, entry in self.members {
       thin_write_member_valid(entry, index)
@@ -442,7 +442,7 @@ pub fn ThinArchiveBuilder::write(
     }
     ignore(count)
     ignore(total_names)
-    let headers : Array[Int] = []
+    let headers : Array[Int32] = []
     for index, _entry in self.members {
       headers.push(offset)
       offset = write_add(
@@ -525,7 +525,7 @@ pub extend ThinWriteMember with Debug::{to_repr}
 pub extend ThinArchiveBuilder with Debug::{to_repr}
 
 ///|
-fn thin_reference_name(name_offset : Int, member_offset : Int?) -> Bytes {
+fn thin_reference_name(name_offset : Int32, member_offset : Int32?) -> Bytes {
   @utf8.encode(
     match member_offset {
       Some(offset) => "/\{name_offset}:\{offset}"

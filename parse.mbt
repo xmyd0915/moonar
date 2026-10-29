@@ -6,7 +6,7 @@ priv suberror InvalidArchive {
 ///|
 fn[T] reject(
   code : String,
-  offset : Int,
+  offset : Int32,
   message : String,
 ) -> T raise InvalidArchive {
   raise InvalidArchive({ code, offset, message, })
@@ -16,9 +16,9 @@ fn[T] reject(
 // Header numbers use ASCII digits, with spaces permitted only at the ends.
 fn number_field(
   data : Bytes,
-  start : Int,
-  width : Int,
-  radix : Int,
+  start : Int32,
+  width : Int32,
+  radix : Int32,
   optional : Bool,
   limit : Int64,
 ) -> Int64? raise InvalidArchive {
@@ -73,7 +73,7 @@ fn has_coff_linker_pair(data : Bytes) -> Bool {
 ///|
 fn archive_timestamp(
   data : Bytes,
-  start : Int,
+  start : Int32,
   coff : Bool,
 ) -> Int64? raise InvalidArchive {
   // Microsoft import libraries use -1 as an unknown timestamp. Preserve its
@@ -97,8 +97,8 @@ fn archive_timestamp(
 ///|
 fn parse_records(
   data : Bytes,
-  max_members : Int,
-  max_name_bytes : Int,
+  max_members : Int32,
+  max_name_bytes : Int32,
 ) -> Archive raise InvalidArchive {
   if data.length() >= 8 && data[:8] == b"!<thin>\n"[:] {
     reject("AR007", 0, "use parse_thin for thin archives")
@@ -108,9 +108,9 @@ fn parse_records(
   }
   let coff_header = has_coff_linker_pair(data)
   let records : Array[Member] = []
-  let pending_names : Array[(Int, Int)] = []
-  let wanted_names : Map[Int, Unit] = Map([])
-  let mut long_table : (Int, Int)? = None
+  let pending_names : Array[(Int32, Int32)] = []
+  let wanted_names : Map[Int32, Unit] = Map([])
+  let mut long_table : (Int32, Int32)? = None
   let mut offset = 8
   while offset < data.length() {
     if records.length() >= max_members {
@@ -277,11 +277,11 @@ fn parse_records(
 /// Input bytes are immutable. Errors carry offsets into that input.
 pub fn parse(
   input : Bytes,
-  max_members? : Int = 100000,
-  max_bytes? : Int = 67108864,
-  max_name_bytes? : Int = 67108864,
-  max_symbols? : Int = 1000000,
-  max_symbol_name_bytes? : Int = 67108864,
+  max_members~ : Int32 = 100000,
+  max_bytes~ : Int32 = 67108864,
+  max_name_bytes~ : Int32 = 67108864,
+  max_symbols~ : Int32 = 1000000,
+  max_symbol_name_bytes~ : Int32 = 67108864,
 ) -> Result[Archive, ParseError] {
   if max_members < 0 ||
     max_bytes < 0 ||

@@ -1,15 +1,15 @@
 ///|
 priv struct BitcodeFixture {
   buffer : @buffer.Buffer
-  mut byte : Int
-  mut bits : Int
+  mut byte : Int32
+  mut bits : Int32
 }
 
 ///|
 fn BitcodeFixture::put(
   self : BitcodeFixture,
   value : UInt64,
-  width : Int,
+  width : Int32,
 ) -> Unit {
   for i in 0..<width {
     self.byte = self.byte | (((value >> i) & 1UL).to_int() << self.bits)
@@ -26,7 +26,7 @@ fn BitcodeFixture::put(
 fn BitcodeFixture::vbr(
   self : BitcodeFixture,
   input : UInt64,
-  width : Int,
+  width : Int32,
 ) -> Unit {
   let mut value = input
   let mask = (1UL << (width - 1)) - 1UL
@@ -53,7 +53,7 @@ fn bc_fixture() -> BitcodeFixture {
 }
 
 ///|
-fn bc_fixture_block(id : Int, body : Bytes) -> Bytes {
+fn bc_fixture_block(id : Int32, body : Bytes) -> Bytes {
   let output = bc_fixture()
   output.put(1UL, 2)
   output.vbr(id.to_uint64(), 8)
@@ -65,7 +65,7 @@ fn bc_fixture_block(id : Int, body : Bytes) -> Bytes {
 }
 
 ///|
-fn bc_fixture_blob(blob : Bytes, code_encoding? : Int = 0) -> Bytes {
+fn bc_fixture_blob(blob : Bytes, code_encoding~ : Int32 = 0) -> Bytes {
   let output = bc_fixture()
   output.put(2UL, 3)
   output.vbr(2UL, 5)
@@ -95,7 +95,10 @@ fn bc_fixture_blob(blob : Bytes, code_encoding? : Int = 0) -> Bytes {
 }
 
 ///|
-fn bc_fixture_table(names : Array[Bytes], flags : Array[Int]) -> (Bytes, Bytes) {
+fn bc_fixture_table(
+  names : Array[Bytes],
+  flags : Array[Int32],
+) -> (Bytes, Bytes) {
   let strings = @buffer.Buffer()
   let symbols = @buffer.Buffer()
   let mut uncommon = 0
@@ -138,7 +141,7 @@ fn bc_fixture_table(names : Array[Bytes], flags : Array[Int]) -> (Bytes, Bytes) 
 fn bc_fixture_file(
   table : Bytes,
   strings : Bytes,
-  code_encoding? : Int = 0,
+  code_encoding~ : Int32 = 0,
 ) -> Bytes {
   b"BC\xc0\xde" +
   bc_fixture_block(8, b"\x00\x00\x00\x00") +

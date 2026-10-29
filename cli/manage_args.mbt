@@ -8,7 +8,7 @@ pub(all) struct ManageOptions {
   index_mode : String
   preserve : Bool
   force : Bool
-  at : Int?
+  at : Int32?
   allow_parent : Bool
   little_endian : Bool
 } derive(Eq, Debug)
@@ -29,7 +29,7 @@ fn parse_manage_args(args : Array[String]) -> Result[Request, String] {
   let mut index_mode = "auto"
   let mut preserve = false
   let mut force = false
-  let mut at : Int? = None
+  let mut at : Int32? = None
   let mut allow_parent = false
   let mut little_endian = true
   let mut json_output = false

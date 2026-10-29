@@ -26,7 +26,7 @@ fn metadata_value(value : Int64?) -> Json {
 }
 
 ///|
-fn index_value(value : Int?) -> Json {
+fn index_value(value : Int32?) -> Json {
   match value {
     Some(n) => Json(n)
     None => Json::null()
@@ -34,7 +34,7 @@ fn index_value(value : Int?) -> Json {
 }
 
 ///|
-fn member_json(entry : Member, index : Int) -> Json {
+fn member_json(entry : Member, index : Int32) -> Json {
   Json::object({
     "index": Json(index),
     "name_display": Json(entry.name_text()),

@@ -1,5 +1,5 @@
 ///|
-fn object_fixture_put(data : Bytes, offset : Int, value : Bytes) -> Bytes {
+fn object_fixture_put(data : Bytes, offset : Int32, value : Bytes) -> Bytes {
   data[:offset].to_owned() + value + data[offset + value.length():].to_owned()
 }
 
@@ -7,9 +7,9 @@ fn object_fixture_put(data : Bytes, offset : Int, value : Bytes) -> Bytes {
 fn object_fixture_elf(
   wide : Bool,
   little : Bool,
-  extended? : Bool = false,
-  second_table? : Bool = false,
-  slim? : Bool = false,
+  extended~ : Bool = false,
+  second_table~ : Bool = false,
+  slim~ : Bool = false,
 ) -> Bytes {
   let header_size = if wide { 64 } else { 52 }
   let section_size = if wide { 64 } else { 40 }

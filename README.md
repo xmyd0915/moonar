@@ -7,14 +7,17 @@ MoonAr 是用 MoonBit 编写的通用 Unix ar 归档库与命令行工具。它�
 以及读取 `.deb` 的外层容器。也支持 Microsoft COFF `.lib` 静态库与导入库。
 核心库直接处理字节，不依赖外部 `ar` 程序。
 
-**0.7.1 优化归档比较并修复嵌套 thin 精确预算处理**，提供三平台 39 组性能基准和 macOS 本机消费者。
+**0.7.2 使用 MoonBit 0.10.16 工具链**，提供三平台 39 组性能基准和 macOS 本机消费者。
 Clang 的 full LTO、ThinLTO 对象可参与创建、编辑、
 thin 归档和格式转换，支持原始 bitcode 与 Mach-O 包装。保留 COFF 双 linker-member、
 bigobj、短导入对象、ELF、Mach-O 以及 GNU 直接/嵌套 thin 的完整工作流。
 
 ## 创建并使用静态库
 
-安装 [MoonBit 工具链](https://www.moonbitlang.com/download)，native 后端需要 C 编译器。
+安装 [MoonBit 工具链](https://www.moonbitlang.com/download)，要求 **moonc 0.10.16 或更高版本**，
+native 后端需要 C 编译器。可用 `moon version --all` 查看编译器版本；复现 CI 时使用
+编译器与 core `0.10.16+b1a0e846e`。自动检查入口为
+`python tools/verify_toolchain.py`（Python 3.9+）。
 
 ```sh
 git clone https://github.com/xmyd0915/moonar.git
@@ -127,7 +130,7 @@ COFF 两份 linker-member 会交叉校验并以第二份的排序映射公开。
 ## 作为 MoonBit 库使用
 
 ```sh
-moon add xmyd0915/moonar@0.7.1
+moon add xmyd0915/moonar@0.7.2
 ```
 
 在 `moon.pkg` 中导入 `"xmyd0915/moonar" @ar`：
@@ -170,7 +173,7 @@ LLVM bitcode 使用内嵌的版本 3 符号摘要表，读取编译器生成的�
 分组和共享预算。LLVM IR 指令、优化与代码生成由链接工具链处理。
 
 明确的格式边界：缺少支持的摘要表的旧 bitcode、GCC slim LTO 插件解析、fat Mach-O 和
-AIX big archive 不在 0.7.1 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
+AIX big archive 不在 0.7.2 自动发现范围内。GCC slim 标记会明确报错；fat LTO 的原生符号
 仍可使用。库调用方也可提供显式符号映射。
 `check` 校验容器和索引结构，`--external` 另检查 thin 外部成员，不等价于对象 ABI 或链接结果验证。目录批量解压、`.deb`
 内层 tar 解压、链接器实现和包签名校验不属于本库职责。
@@ -178,6 +181,7 @@ AIX big archive 不在 0.7.1 自动发现范围内。GCC slim 标记会明确报
 ## 验证与实际消费者
 
 ```sh
+python tools/verify_toolchain.py
 moon fmt --check
 moon check --target all --deny-warn
 moon test --target all --deny-warn
@@ -207,7 +211,7 @@ LTO 验证使用 Clang、LLD、LLVM ar，或 `verify_lto.py --zig PATH`：对照
 消费者，并核对安装内容与本地发行 ZIP 的全部文件。详见[发布包验证](docs/REVIEW.md#发布包公共接口)。
 
 [Linux / Windows / macOS Apple Silicon CI](.github/workflows/ci.yml) 固定编译器与 core
-`0.10.14+7d59c7ec9`，运行四后端测试、真实文件操作和独立消费者检查。
+`0.10.16+b1a0e846e`，先检查实际编译器版本，再运行四后端测试、真实文件操作和独立消费者检查。
 GNU/LLVM、Python 与 C 编译器仅用于构建或验证；核心库只依赖 MoonBit core。
 
 性能基准覆盖 100/1000/10000 个成员、唯一名称与重名比较，以及深度 1/4/16 的嵌套 thin，共 39 组场景。

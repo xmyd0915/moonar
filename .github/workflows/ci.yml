@@ -21,10 +21,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: hustcer/setup-moonbit@9199da0ab63ea0c0bab1dc15f03d76e17ed4f75f # v1.22
         with:
-          version: '0.10.14+7d59c7ec9'
-          core-version: '0.10.14+7d59c7ec9'
-      - name: Record toolchain
-        run: moon version --all
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Verify compiler requirement and record toolchain
+        run: python tools/verify_toolchain.py --expected-version 0.10.16+b1a0e846e
       - name: Resolve dependencies
         run: moon update
       - name: Check formatting
@@ -42,9 +45,6 @@ jobs:
         run: |
           moon info
           git diff --exit-code -- '*.mbti'
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.12'
       - name: Verify the three examples
         run: python tools/examples.py --moonar _build/native/debug/build/cmd/main/main.exe
       - name: Verify native and Node filesystem workflows

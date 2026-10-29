@@ -3,11 +3,11 @@ fn write_coff(
   builder : ArchiveBuilder,
   metadata : WriteMetadata,
   supplied : Array[WriteSymbol]?,
-  max_bytes : Int,
-  max_members : Int,
-  max_name_bytes : Int,
-  max_symbols : Int,
-  max_symbol_name_bytes : Int,
+  max_bytes : Int32,
+  max_members : Int32,
+  max_name_bytes : Int32,
+  max_symbols : Int32,
+  max_symbol_name_bytes : Int32,
 ) -> Result[Bytes, WriteError] {
   try {
     if max_bytes < 0 ||
@@ -47,7 +47,7 @@ fn write_coff(
       None,
       "expanded entry-name byte limit exceeded",
     )
-    let offsets : Map[Bytes, Int] = Map([])
+    let offsets : Map[Bytes, Int32] = Map([])
     let long_names : Array[Bytes] = []
     let mut long_size = 0
     for i, entry in entries {
@@ -171,7 +171,7 @@ fn write_coff(
     if long_size > 0 {
       end = write_record_end(end, long_size, max_bytes, None)
     }
-    let headers : Array[Int] = []
+    let headers : Array[Int32] = []
     for i, entry in entries {
       headers.push(end)
       end = write_record_end(end, entry.data.length(), max_bytes, Some(i))

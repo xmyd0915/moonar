@@ -3,7 +3,7 @@
 /// OB003: discovery budget exceeded. Offsets are relative to the object bytes.
 pub(all) struct ObjectError {
   code : String
-  offset : Int
+  offset : Int32
   message : String
 } derive(Eq, Debug)
 
@@ -20,14 +20,14 @@ priv suberror InvalidObject {
 
 ///|
 priv struct ObjectBudget {
-  mut symbols_left : Int
-  mut names_left : Int
+  mut symbols_left : Int32
+  mut names_left : Int32
 }
 
 ///|
 fn[T] object_reject(
   code : String,
-  offset : Int,
+  offset : Int32,
   message : String,
 ) -> T raise InvalidObject {
   raise InvalidObject({ code, offset, message, })
@@ -36,8 +36,8 @@ fn[T] object_reject(
 ///|
 fn object_range(
   data : Bytes,
-  offset : Int,
-  size : Int,
+  offset : Int32,
+  size : Int32,
 ) -> Unit raise InvalidObject {
   if offset < 0 ||
     size < 0 ||
@@ -50,11 +50,11 @@ fn object_range(
 ///|
 fn object_number(
   data : Bytes,
-  offset : Int,
-  width : Int,
+  offset : Int32,
+  width : Int32,
   little : Bool,
-  maximum : Int,
-) -> Int raise InvalidObject {
+  maximum : Int32,
+) -> Int32 raise InvalidObject {
   object_range(data, offset, width)
   let mut value = 0
   for n = 0; n < width; n = n + 1 {
@@ -70,7 +70,7 @@ fn object_number(
 }
 
 ///|
-fn object_tag(data : Bytes, offset : Int, little : Bool) -> UInt {
+fn object_tag(data : Bytes, offset : Int32, little : Bool) -> UInt32 {
   let mut value = 0U
   for n = 0; n < 4; n = n + 1 {
     value = (value << 8) |
@@ -80,7 +80,7 @@ fn object_tag(data : Bytes, offset : Int, little : Bool) -> UInt {
 }
 
 ///|
-fn object_nonzero(data : Bytes, offset : Int, width : Int) -> Bool {
+fn object_nonzero(data : Bytes, offset : Int32, width : Int32) -> Bool {
   for n = offset; n < offset + width; n = n + 1 {
     if data[n] != b'\x00' {
       return true
@@ -92,8 +92,8 @@ fn object_nonzero(data : Bytes, offset : Int, width : Int) -> Bool {
 ///|
 fn object_charge_symbols(
   budget : ObjectBudget,
-  count : Int,
-  offset : Int,
+  count : Int32,
+  offset : Int32,
 ) -> Unit raise InvalidObject {
   if count > budget.symbols_left {
     object_reject("OB003", offset, "symbol-table entry limit exceeded")
@@ -104,8 +104,8 @@ fn object_charge_symbols(
 ///|
 fn object_string_table(
   data : Bytes,
-  offset : Int,
-  size : Int,
+  offset : Int32,
+  size : Int32,
   elf : Bool,
 ) -> Unit raise InvalidObject {
   object_range(data, offset, size)
@@ -118,9 +118,9 @@ fn object_string_table(
 ///|
 fn object_name(
   data : Bytes,
-  offset : Int,
-  size : Int,
-  index : Int,
+  offset : Int32,
+  size : Int32,
+  index : Int32,
   budget : ObjectBudget,
 ) -> Bytes raise InvalidObject {
   if index < 0 || index >= size {
@@ -145,13 +145,13 @@ fn object_name(
 
 ///|
 priv struct ObjectSection {
-  kind : UInt
-  offset : Int
-  size : Int
-  link : Int
-  info : Int
-  entry_size : Int
-  header : Int
+  kind : UInt32
+  offset : Int32
+  size : Int32
+  link : Int32
+  info : Int32
+  entry_size : Int32
+  header : Int32
 }
 
 ///|
@@ -287,7 +287,7 @@ fn object_elf(
     object_reject("OB001", shoff, "ELF section-name table index is invalid")
   }
   let sections : Array[ObjectSection] = []
-  let companions : Map[Int, Int] = Map([])
+  let companions : Map[Int32, Int32] = Map([])
   for n = 0; n < section_count; n = n + 1 {
     let header = shoff + n * shstride
     let kind = object_tag(data, header + 4, little)
@@ -529,7 +529,7 @@ fn object_macho(
   let commands = object_number(data, 16, 4, little, command_size / 8)
   let commands_end = header_size + command_size
   let mut pos = header_size
-  let mut symtab : (Int, Int, Int, Int)? = None
+  let mut symtab : (Int32, Int32, Int32, Int32)? = None
   let sections_no_toc : Array[Bool] = []
   for command_index = 0
       command_index < commands
@@ -748,7 +748,7 @@ fn object_macho(
 }
 
 ///|
-fn object_coff_machine(machine : Int) -> Bool {
+fn object_coff_machine(machine : Int32) -> Bool {
   match machine {
     0x014c
     | 0x8664
@@ -788,7 +788,7 @@ fn object_coff_machine(machine : Int) -> Bool {
 fn object_coff(
   data : Bytes,
   budget : ObjectBudget,
-  big? : Bool = false,
+  big~ : Bool = false,
 ) -> Array[Bytes] raise InvalidObject {
   let header_size = if big { 56 } else { 20 }
   let symbol_size = if big { 20 } else { 18 }
@@ -927,8 +927,8 @@ fn object_coff(
   }
   let result : Array[Bytes] = []
   let seen : Map[Bytes, Unit] = Map([])
-  let primary : Map[Int, Unit] = Map([])
-  let weak_targets : Array[(Int, Int)] = []
+  let primary : Map[Int32, Unit] = Map([])
+  let weak_targets : Array[(Int32, Int32)] = []
   let mut index = 0
   while index < count {
     primary[index] = ()
@@ -1132,8 +1132,8 @@ fn object_native_definitions(
 /// max_symbol_name_bytes counts expanded discovered names before deduplication.
 pub fn symbols_from_object(
   data : Bytes,
-  max_symbols? : Int = 1000000,
-  max_symbol_name_bytes? : Int = 67108864,
+  max_symbols~ : Int32 = 1000000,
+  max_symbol_name_bytes~ : Int32 = 67108864,
 ) -> Result[Array[Bytes], ObjectError] {
   if max_symbols < 0 || max_symbol_name_bytes < 0 {
     return Err({
@@ -1157,8 +1157,8 @@ pub fn symbols_from_object(
 /// members. WR006 includes the failing member position and object error offset.
 pub fn ArchiveBuilder::discover_symbols(
   self : ArchiveBuilder,
-  max_symbols? : Int = 1000000,
-  max_symbol_name_bytes? : Int = 67108864,
+  max_symbols~ : Int32 = 1000000,
+  max_symbol_name_bytes~ : Int32 = 67108864,
 ) -> Result[Array[WriteSymbol], WriteError] {
   if max_symbols < 0 || max_symbol_name_bytes < 0 {
     return Err({

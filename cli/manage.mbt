@@ -300,7 +300,7 @@ fn run_manage(
         )
       }
     } else if operation == "delete" {
-      let positions : Map[Int, Unit] = Map([])
+      let positions : Map[Int32, Unit] = Map([])
       let count = if is_thin {
         thin_plan.member_count()
       } else {

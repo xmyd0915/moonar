@@ -3,7 +3,7 @@ fn archive_input_error(
   request : Request,
   path : String,
   error : @ar.ParseError,
-  exit_code : Int,
+  exit_code : Int32,
 ) -> Reply {
   if request.json_output {
     {
@@ -38,8 +38,8 @@ fn external_reader(
   allow_parent_paths : Bool,
   read : (String) -> Result[Bytes, String],
   validate_path : (String, String) -> Result[Unit, String],
-  windows? : Bool = false,
-) -> (Bytes, Int) -> Result[Bytes, String] {
+  windows~ : Bool = false,
+) -> (Bytes, Int32) -> Result[Bytes, String] {
   fn(name, _expected) {
     let name = @utf8.decode(name[:], ignore_bom=false) catch {
       _ => return Err("filesystem member paths must be UTF-8")

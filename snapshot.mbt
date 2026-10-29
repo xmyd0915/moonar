@@ -20,13 +20,13 @@ pub fn Archive::snapshot(self : Archive) -> ArchiveSnapshot {
 // Check every declaration and path before requesting any external contents.
 fn thin_load_plan(
   archive : ThinArchive,
-  max_bytes : Int,
+  max_bytes : Int32,
   allow_parent_paths : Bool,
-) -> (Array[(Int, Bytes)], Int) raise InvalidArchive {
+) -> (Array[(Int32, Bytes)], Int32) raise InvalidArchive {
   if max_bytes < 0 {
     reject("AR008", 0, "limits must be nonnegative")
   }
-  let paths : Array[(Int, Bytes)] = []
+  let paths : Array[(Int32, Bytes)] = []
   let mut total = 0
   for index, entry in archive.archive.records {
     if entry.kind != Regular {
@@ -53,8 +53,8 @@ fn thin_load_plan(
 fn thin_load_bytes(
   entry : Member,
   path : Bytes,
-  loader : (Bytes, Int) -> Result[Bytes, String],
-  max_bytes? : Int = 2147483647,
+  loader : (Bytes, Int32) -> Result[Bytes, String],
+  max_bytes~ : Int32 = 2147483647,
 ) -> Bytes raise InvalidArchive {
   let bytes = match loader(path, entry.size) {
     Ok(bytes) => bytes
@@ -79,11 +79,11 @@ fn thin_load_bytes(
 /// Paths and cumulative declared sizes are checked before the first loader call.
 pub fn ThinArchive::validate_members(
   self : ThinArchive,
-  loader : (Bytes, Int) -> Result[Bytes, String],
-  max_bytes? : Int = 67108864,
-  allow_parent_paths? : Bool = false,
-  nested_limits? : NestedLimits = NestedLimits::new(),
-) -> Result[Int, ParseError] {
+  loader : (Bytes, Int32) -> Result[Bytes, String],
+  max_bytes~ : Int32 = 67108864,
+  allow_parent_paths~ : Bool = false,
+  nested_limits~ : NestedLimits = NestedLimits::new(),
+) -> Result[Int32, ParseError] {
   try {
     let (paths, total) = thin_load_plan(self, max_bytes, allow_parent_paths)
     let context = nested_context(
@@ -113,10 +113,10 @@ pub fn ThinArchive::validate_members(
 /// max_bytes limits cumulative external payloads, separately from container size.
 pub fn ThinArchive::snapshot(
   self : ThinArchive,
-  loader : (Bytes, Int) -> Result[Bytes, String],
-  max_bytes? : Int = 67108864,
-  allow_parent_paths? : Bool = false,
-  nested_limits? : NestedLimits = NestedLimits::new(),
+  loader : (Bytes, Int32) -> Result[Bytes, String],
+  max_bytes~ : Int32 = 67108864,
+  allow_parent_paths~ : Bool = false,
+  nested_limits~ : NestedLimits = NestedLimits::new(),
 ) -> Result[ArchiveSnapshot, ParseError] {
   try {
     let (paths, total) = thin_load_plan(self, max_bytes, allow_parent_paths)

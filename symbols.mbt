@@ -3,12 +3,12 @@
 // fit within this input, including values stored in 64-bit table fields.
 fn symbol_number(
   data : Bytes,
-  pos : Int,
-  width : Int,
+  pos : Int32,
+  width : Int32,
   little : Bool,
-  end : Int,
-  limit : Int,
-) -> Int raise InvalidArchive {
+  end : Int32,
+  limit : Int32,
+) -> Int32 raise InvalidArchive {
   if pos > end || end - pos < width {
     reject("AR009", pos, "truncated symbol index integer")
   }
@@ -29,10 +29,10 @@ fn symbol_number(
 ///|
 fn symbol_target(
   archive : Archive,
-  headers : Map[Int, Int],
-  offset : Int,
-  field_offset : Int,
-) -> Int raise InvalidArchive {
+  headers : Map[Int32, Int32],
+  offset : Int32,
+  field_offset : Int32,
+) -> Int32 raise InvalidArchive {
   match headers.get(offset) {
     Some(index) if archive.records[index].kind == Regular => index
     _ =>
@@ -45,9 +45,9 @@ fn symbol_target(
 ///|
 fn symbol_padding(
   data : Bytes,
-  start : Int,
-  end : Int,
-  maximum : Int,
+  start : Int32,
+  end : Int32,
+  maximum : Int32,
 ) -> Unit raise InvalidArchive {
   if end - start > maximum {
     reject("AR009", start, "unexpected bytes after symbol index")
@@ -62,10 +62,10 @@ fn symbol_padding(
 ///|
 fn gnu_symbol_index(
   archive : Archive,
-  index : Int,
-  headers : Map[Int, Int],
-  max_symbols : Int,
-  max_names : Int,
+  index : Int32,
+  headers : Map[Int32, Int32],
+  max_symbols : Int32,
+  max_names : Int32,
 ) -> SymbolIndex raise InvalidArchive {
   let entry = archive.records[index]
   let data = archive.data
@@ -128,12 +128,12 @@ fn gnu_symbol_index(
 ///|
 fn bsd_symbol_candidate(
   archive : Archive,
-  index : Int,
-  headers : Map[Int, Int],
-  width : Int,
+  index : Int32,
+  headers : Map[Int32, Int32],
+  width : Int32,
   little : Bool,
-  max_symbols : Int,
-  max_names : Int,
+  max_symbols : Int32,
+  max_names : Int32,
 ) -> SymbolIndex raise InvalidArchive {
   let entry = archive.records[index]
   let data = archive.data
@@ -164,8 +164,8 @@ fn bsd_symbol_candidate(
   if count > max_symbols {
     reject("AR008", start, "symbol count limit exceeded")
   }
-  let references : Array[(Int, Int, Int)] = []
-  let wanted : Map[Int, Unit] = Map([])
+  let references : Array[(Int32, Int32, Int32)] = []
+  let wanted : Map[Int32, Unit] = Map([])
   for n = 0; n < count; n = n + 1 {
     let pos = start + width + n * width * 2
     let name_index = symbol_number(data, pos, width, little, end, string_size)
@@ -182,7 +182,7 @@ fn bsd_symbol_candidate(
     wanted[name_index] = ()
   }
   // Scan the string table once; repeated references share immutable name bytes.
-  let names : Map[Int, Bytes] = Map([])
+  let names : Map[Int32, Bytes] = Map([])
   let mut cursor = string_start
   let mut unique_name_bytes = 0
   while cursor < string_end {
@@ -249,10 +249,10 @@ fn bsd_symbol_candidate(
 ///|
 fn bsd_symbol_index(
   archive : Archive,
-  index : Int,
-  headers : Map[Int, Int],
-  max_symbols : Int,
-  max_names : Int,
+  index : Int32,
+  headers : Map[Int32, Int32],
+  max_symbols : Int32,
+  max_names : Int32,
 ) -> SymbolIndex raise InvalidArchive {
   let name = archive.records[index].name
   let width = if name == b"__.SYMDEF_64" || name == b"__.SYMDEF_64 SORTED" {
@@ -320,11 +320,11 @@ fn bsd_symbol_index(
 ///|
 fn parse_symbol_indexes(
   archive : Archive,
-  max_symbols : Int,
-  max_names : Int,
+  max_symbols : Int32,
+  max_names : Int32,
 ) -> Array[SymbolIndex] raise InvalidArchive {
-  let headers : Map[Int, Int] = Map([])
-  let tables : Array[Int] = []
+  let headers : Map[Int32, Int32] = Map([])
+  let tables : Array[Int32] = []
   for i, entry in archive.records {
     headers[entry.header_offset] = i
     if entry.kind == SymbolTable {

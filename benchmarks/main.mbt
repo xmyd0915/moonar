@@ -21,7 +21,7 @@ fn[T] written(value : Result[T, @ar.WriteError]) -> T raise {
 }
 
 ///|
-fn number(value : String, low : Int, high : Int) -> Int raise {
+fn number(value : String, low : Int32, high : Int32) -> Int32 raise {
   let mut result = 0
   if value.is_empty() {
     fail("empty benchmark parameter")
@@ -41,14 +41,14 @@ fn number(value : String, low : Int, high : Int) -> Int raise {
 
 ///|
 struct Workload {
-  run : () -> Int raise
-  input_bytes : Int
+  run : () -> Int32 raise
+  input_bytes : Int32
 }
 
 ///|
 fn fixture(
-  count : Int,
-  size : Int,
+  count : Int32,
+  size : Int32,
   duplicate : Bool,
 ) -> @ar.ArchiveBuilder raise {
   written(
@@ -75,7 +75,11 @@ fn fixture(
 }
 
 ///|
-fn regular_workload(kind : String, count : Int, size : Int) -> Workload raise {
+fn regular_workload(
+  kind : String,
+  count : Int32,
+  size : Int32,
+) -> Workload raise {
   let builder = fixture(count, size, kind == "duplicate_compare")
   let data = written(builder.write())
   let archive = parsed(@ar.parse(data))
@@ -140,9 +144,9 @@ fn regular_workload(kind : String, count : Int, size : Int) -> Workload raise {
 ///|
 fn nested_workload(
   kind : String,
-  count : Int,
-  depth : Int,
-  size : Int,
+  count : Int32,
+  depth : Int32,
+  size : Int32,
 ) -> Workload raise {
   let base = written(fixture(count, size, false).write())
   let ordinary = parsed(@ar.parse(base))

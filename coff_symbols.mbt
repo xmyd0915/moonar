@@ -1,6 +1,6 @@
 ///|
-fn index_mappings(table : SymbolIndex) -> Map[Bytes, Array[Int]] {
-  let result : Map[Bytes, Array[Int]] = Map([])
+fn index_mappings(table : SymbolIndex) -> Map[Bytes, Array[Int32]] {
+  let result : Map[Bytes, Array[Int32]] = Map([])
   for symbol in table.symbols {
     match result.get(symbol.name) {
       Some(targets) => targets.push(symbol.member_index)
@@ -13,9 +13,9 @@ fn index_mappings(table : SymbolIndex) -> Map[Bytes, Array[Int]] {
 ///|
 fn coff_symbol_index(
   archive : Archive,
-  headers : Map[Int, Int],
-  max_symbols : Int,
-  max_names : Int,
+  headers : Map[Int32, Int32],
+  max_symbols : Int32,
+  max_names : Int32,
 ) -> SymbolIndex raise InvalidArchive {
   let entry = archive.records[1]
   let data = archive.data
@@ -32,7 +32,7 @@ fn coff_symbol_index(
   if members > (entry.size - 8) / 4 {
     reject("AR009", start, "COFF member offsets exceed the linker record")
   }
-  let targets : Array[Int] = []
+  let targets : Array[Int32] = []
   let mut previous = -1
   for n = 0; n < members; n = n + 1 {
     let field = start + 4 + n * 4

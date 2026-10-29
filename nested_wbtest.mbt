@@ -1,9 +1,9 @@
 ///|
 fn nested_thin(
   path : Bytes,
-  offset : Int,
-  size : Int,
-  copies? : Int = 1,
+  offset : Int32,
+  size : Int32,
+  copies~ : Int32 = 1,
 ) -> ThinArchive raise {
   let entries = Array::make(
     copies,
@@ -18,7 +18,7 @@ test "nested GNU references resolve logical names and cache shared containers" {
     writer_plan([WriteMember::new(b"actual.o", b"abc")]).write(),
   )
   let archive = nested_thin(b"dir/base.a", 8, 3, copies=2)
-  let calls : Array[(Bytes, Int)] = []
+  let calls : Array[(Bytes, Int32)] = []
   let loader = fn(path, limit) {
     calls.push((path, limit))
     Ok(contents)
@@ -77,7 +77,7 @@ test "nested resolution checks exact targets sizes and aggregate budgets" {
   assert_true(
     root.materialize((_, _) => Err("unavailable")) is Err({ code: "AR013", .. }),
   )
-  let calls : Array[Int] = []
+  let calls : Array[Int32] = []
   let counting = fn(_, _) {
     calls.push(1)
     Ok(data)

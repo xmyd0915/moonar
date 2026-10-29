@@ -3,16 +3,16 @@
 // skipped by their declared word length, so discovery does not construct IR.
 priv struct BitcodeCursor {
   data : Bytes
-  end : Int
-  origin : Int
-  mut byte : Int
-  mut bit : Int
+  end : Int32
+  origin : Int32
+  mut byte : Int32
+  mut bit : Int32
 }
 
 ///|
 fn BitcodeCursor::fixed(
   self : BitcodeCursor,
-  width : Int,
+  width : Int32,
 ) -> UInt64 raise InvalidObject {
   let mut value = 0UL
   for i in 0..<width {
@@ -33,7 +33,7 @@ fn BitcodeCursor::fixed(
 ///|
 fn BitcodeCursor::vbr(
   self : BitcodeCursor,
-  width : Int,
+  width : Int32,
 ) -> UInt64 raise InvalidObject {
   let start = self.byte
   let mut value = 0UL
@@ -57,9 +57,9 @@ fn BitcodeCursor::vbr(
 ///|
 fn BitcodeCursor::number(
   self : BitcodeCursor,
-  width : Int,
-  maximum : Int,
-) -> Int raise InvalidObject {
+  width : Int32,
+  maximum : Int32,
+) -> Int32 raise InvalidObject {
   let start = self.byte
   let value = self.vbr(width)
   if value > maximum.to_uint64() {
@@ -89,8 +89,8 @@ fn BitcodeCursor::align(self : BitcodeCursor) -> Unit raise InvalidObject {
 ///|
 fn BitcodeCursor::skip(
   self : BitcodeCursor,
-  count : Int,
-  width : Int,
+  count : Int32,
+  width : Int32,
 ) -> Unit raise InvalidObject {
   let bits = count.to_uint64() * width.to_uint64()
   let available = (self.end - self.byte).to_uint64() * 8UL -
@@ -106,7 +106,7 @@ fn BitcodeCursor::skip(
 ///|
 fn BitcodeCursor::block(
   self : BitcodeCursor,
-) -> (Int, Int, Int) raise InvalidObject {
+) -> (Int32, Int32, Int32) raise InvalidObject {
   let id = self.number(8, 2147483647)
   let width = self.number(4, 32)
   if width < 2 {
@@ -131,8 +131,8 @@ fn BitcodeCursor::block(
 ///|
 priv enum BitcodeOperand {
   Literal(UInt64)
-  Fixed(Int)
-  Vbr(Int)
+  Fixed(Int32)
+  Vbr(Int32)
   ArrayField
   Char6
   Blob
@@ -235,9 +235,9 @@ fn BitcodeCursor::scalar(
 fn BitcodeCursor::record(
   self : BitcodeCursor,
   definition : Array[BitcodeOperand],
-) -> (UInt64, (Int, Int)?) raise InvalidObject {
+) -> (UInt64, (Int32, Int32)?) raise InvalidObject {
   let code = self.scalar(definition[0])
-  let mut blob : (Int, Int)? = None
+  let mut blob : (Int32, Int32)? = None
   let mut i = 1
   while i < definition.length() {
     match definition[i] {
@@ -301,14 +301,14 @@ fn BitcodeCursor::unabbreviated(
 ///|
 fn bitcode_blob(
   data : Bytes,
-  origin : Int,
-  start : Int,
-  end : Int,
-  width : Int,
-) -> (Int, Int) raise InvalidObject {
+  origin : Int32,
+  start : Int32,
+  end : Int32,
+  width : Int32,
+) -> (Int32, Int32) raise InvalidObject {
   let cursor : BitcodeCursor = { data, origin, byte: start, bit: 0, end, }
   let definitions : Array[Array[BitcodeOperand]] = []
-  let mut blob : (Int, Int)? = None
+  let mut blob : (Int32, Int32)? = None
   while cursor.byte < end {
     match cursor.fixed(width).to_int() {
       0 => {

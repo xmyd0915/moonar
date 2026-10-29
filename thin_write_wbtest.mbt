@@ -329,7 +329,7 @@ test "thin materialization preserves payload order names and metadata" {
     ThinWriteMember::new(b"dir/a.o", 3, metadata~),
   ])
   let archive = thin_parsed(writer_ok(builder.write(metadata=Preserve)))
-  let calls : Array[(Bytes, Int)] = []
+  let calls : Array[(Bytes, Int32)] = []
   let materialized = match
     archive.materialize(
       fn(path, limit) {
@@ -355,7 +355,7 @@ test "thin materialization preserves payload order names and metadata" {
 ///|
 test "thin materialization preflights all declarations and reports loader errors" {
   let calls : Array[Unit] = []
-  let loader = fn(_path : Bytes, _size : Int) -> Result[Bytes, String] {
+  let loader = fn(_path : Bytes, _size : Int32) -> Result[Bytes, String] {
     calls.push(())
     Ok(b"abc")
   }

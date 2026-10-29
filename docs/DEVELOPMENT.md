@@ -120,7 +120,10 @@ BSD 内嵌名称占用的字节从成员数据范围中扣除。
 
 ## 本地检查
 
+使用 moonc 0.10.16 或更高版本。CI 固定编译器与 core `0.10.16+b1a0e846e`。
+
 ```sh
+python tools/verify_toolchain.py
 moon info
 moon fmt
 moon check --target all --deny-warn

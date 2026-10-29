@@ -1,5 +1,18 @@
 # Changes
 
+## 0.7.2 — 2026-10-29
+
+- Set the minimum compiler version to MoonBit 0.10.16 and pin both the compiler
+  and core to `0.10.16+b1a0e846e` in Linux, Windows and macOS CI.
+- Check the actual compiler before building, rejecting older versions or a
+  different pinned build. Retain the toolchain report with verification assets.
+- Document the minimum version and reproducible toolchain alongside the build,
+  examples, public package consumers and native benchmark commands.
+- Apply the compiler formatter's `Int32` spelling and default-parameter syntax,
+  and regenerate interfaces. Existing calls keep the same 32-bit semantics.
+
+Public source APIs remain compatible; archive formats and CLI behavior are unchanged.
+
 ## 0.7.1 — 2026-10-28
 
 - Fix repeated nested thin paths being rejected after their shared name budget

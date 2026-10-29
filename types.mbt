@@ -21,10 +21,10 @@ pub(all) struct Metadata {
 pub(all) struct Member {
   name : Bytes
   kind : MemberKind
-  header_offset : Int
-  data_offset : Int
-  size : Int
-  stored_size : Int
+  header_offset : Int32
+  data_offset : Int32
+  size : Int32
+  stored_size : Int32
   metadata : Metadata
 } derive(Eq, Debug)
 
@@ -40,15 +40,15 @@ struct Archive {
 /// A validated symbol-to-member reference. Offsets refer to the original input.
 pub(all) struct Symbol {
   name : Bytes
-  member_index : Int
-  name_offset : Int
-  offset_field_offset : Int
+  member_index : Int32
+  name_offset : Int32
+  offset_field_offset : Int32
 } derive(Eq, Debug)
 
 ///|
 /// Format is gnu32/gnu64 or bsd32/bsd64 with a -le, -be or -neutral suffix.
 pub(all) struct SymbolIndex {
-  record_index : Int
+  record_index : Int32
   format : String
   symbols : Array[Symbol]
 } derive(Eq, Debug)
@@ -75,7 +75,7 @@ pub extend SymbolIndex with Debug::{to_repr}
 /// A byte offset and stable code explain why parsing stopped.
 pub(all) struct ParseError {
   code : String
-  offset : Int
+  offset : Int32
   message : String
 } derive(Eq, Debug)
 
@@ -107,25 +107,25 @@ fn hex_bytes(bytes : Bytes) -> String {
 
 ///|
 /// Return an owned copy of one record's payload, or None for an invalid index.
-pub fn Archive::member_bytes(self : Archive, index : Int) -> Bytes? {
+pub fn Archive::member_bytes(self : Archive, index : Int32) -> Bytes? {
   guard self.records.get(index) is Some(entry) else { return None }
   Some(self.data[entry.data_offset:entry.data_offset + entry.size].to_owned())
 }
 
 ///|
-pub fn Archive::byte_length(self : Archive) -> Int {
+pub fn Archive::byte_length(self : Archive) -> Int32 {
   self.data.length()
 }
 
 ///|
 /// Number of physical records, including name and symbol tables.
-pub fn Archive::member_count(self : Archive) -> Int {
+pub fn Archive::member_count(self : Archive) -> Int32 {
   self.records.length()
 }
 
 ///|
 /// Return one immutable record, or None for an invalid index.
-pub fn Archive::get_member(self : Archive, index : Int) -> Member? {
+pub fn Archive::get_member(self : Archive, index : Int32) -> Member? {
   self.records.get(index)
 }
 

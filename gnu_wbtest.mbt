@@ -68,7 +68,7 @@ test "GNU names end at the first newline and require its slash terminator" {
 ///|
 test "unused GNU names are validated without populating the lookup map" {
   let table = b"ignored/\n".repeat(10000) + b"used/\n"
-  let wanted : Map[Int, Unit] = Map([(90000, ())])
+  let wanted : Map[Int32, Unit] = Map([(90000, ())])
   let indexed = gnu_names(table, 0, table.length(), wanted)
   assert_eq(indexed.length(), 1)
   assert_eq(indexed.get(90000), Some(b"used"))

@@ -1,11 +1,11 @@
 ///|
 fn bitcode_table_range(
   data : Bytes,
-  start : Int,
-  size : Int,
-  field : Int,
-  stride : Int,
-) -> (Int, Int) raise InvalidObject {
+  start : Int32,
+  size : Int32,
+  field : Int32,
+  stride : Int32,
+) -> (Int32, Int32) raise InvalidObject {
   let offset = object_number(data, start + field, 4, true, size)
   let count = object_number(
     data,
@@ -23,10 +23,10 @@ fn bitcode_table_range(
 ///|
 fn bitcode_string(
   data : Bytes,
-  field : Int,
-  strings : Int,
-  size : Int,
-) -> (Int, Int) raise InvalidObject {
+  field : Int32,
+  strings : Int32,
+  size : Int32,
+) -> (Int32, Int32) raise InvalidObject {
   let offset = object_number(data, field, 4, true, size)
   let length = object_number(data, field + 4, 4, true, size - offset)
   (strings + offset, length)
@@ -35,9 +35,9 @@ fn bitcode_string(
 ///|
 fn bitcode_symbols(
   data : Bytes,
-  table : (Int, Int),
-  strings : (Int, Int),
-  module_count : Int,
+  table : (Int32, Int32),
+  strings : (Int32, Int32),
+  module_count : Int32,
   budget : ObjectBudget,
 ) -> Array[Bytes] raise InvalidObject {
   let (start, size) = table
@@ -237,7 +237,7 @@ fn object_bitcode(
   }
   let mut modules = 0
   let mut groups = 0
-  let mut pending : (Int, Int)? = None
+  let mut pending : (Int32, Int32)? = None
   let result : Array[Bytes] = []
   let seen : Map[Bytes, Unit] = Map([])
   while cursor.byte < end {

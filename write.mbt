@@ -31,7 +31,7 @@ pub(all) struct WriteMember {
 pub fn WriteMember::new(
   name : Bytes,
   data : Bytes,
-  metadata? : Metadata = {
+  metadata~ : Metadata = {
     timestamp: Some(0L),
     uid: Some(0L),
     gid: Some(0L),
@@ -46,7 +46,7 @@ pub fn WriteMember::new(
 /// Supply mappings after all edits; mappings are never carried across edits.
 pub(all) struct WriteSymbol {
   name : Bytes
-  member_index : Int
+  member_index : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -55,7 +55,7 @@ pub(all) struct WriteSymbol {
 /// WR005: invalid or unsupported symbol-index request.
 pub(all) struct WriteError {
   code : String
-  member_index : Int?
+  member_index : Int32?
   message : String
 } derive(Eq, Debug)
 
@@ -87,7 +87,7 @@ pub fn ArchiveBuilder::from_members(
 }
 
 ///|
-pub fn ArchiveBuilder::member_count(self : ArchiveBuilder) -> Int {
+pub fn ArchiveBuilder::member_count(self : ArchiveBuilder) -> Int32 {
   self.members.length()
 }
 
@@ -105,7 +105,7 @@ priv suberror InvalidWrite {
 ///|
 fn[T] write_reject(
   code : String,
-  index : Int?,
+  index : Int32?,
   message : String,
 ) -> T raise InvalidWrite {
   raise InvalidWrite({ code, member_index: index, message, })
@@ -114,7 +114,7 @@ fn[T] write_reject(
 ///|
 fn write_member_valid(
   entry : WriteMember,
-  index : Int,
+  index : Int32,
 ) -> Unit raise InvalidWrite {
   if entry.name.is_empty() {
     write_reject("WR001", Some(index), "empty ordinary-entry name")
@@ -160,7 +160,7 @@ pub fn ArchiveBuilder::append(
 /// Insert before a zero-based position. The final position appends an entry.
 pub fn ArchiveBuilder::insert(
   self : ArchiveBuilder,
-  index : Int,
+  index : Int32,
   entry : WriteMember,
 ) -> Result[ArchiveBuilder, WriteError] {
   try {
@@ -183,7 +183,7 @@ pub fn ArchiveBuilder::insert(
 ///|
 pub fn ArchiveBuilder::replace(
   self : ArchiveBuilder,
-  index : Int,
+  index : Int32,
   entry : WriteMember,
 ) -> Result[ArchiveBuilder, WriteError] {
   try {
@@ -202,7 +202,7 @@ pub fn ArchiveBuilder::replace(
 ///|
 pub fn ArchiveBuilder::remove(
   self : ArchiveBuilder,
-  index : Int,
+  index : Int32,
 ) -> Result[ArchiveBuilder, WriteError] {
   if index < 0 || index >= self.members.length() {
     return Err({
@@ -220,8 +220,8 @@ pub fn ArchiveBuilder::remove(
 /// Move a entry to its final zero-based position, preserving the order of others.
 pub fn ArchiveBuilder::move_member(
   self : ArchiveBuilder,
-  from : Int,
-  to : Int,
+  from : Int32,
+  to : Int32,
 ) -> Result[ArchiveBuilder, WriteError] {
   let count = self.members.length()
   if from < 0 || from >= count || to < 0 || to >= count {
@@ -243,7 +243,7 @@ pub fn ArchiveBuilder::move_member(
 /// Ordinary-entry positions do not include name or symbol table records.
 pub fn Archive::edit(
   self : Archive,
-  drop_symbol_indexes? : Bool = false,
+  drop_symbol_indexes~ : Bool = false,
 ) -> Result[ArchiveBuilder, WriteError] {
   if !self.indexes.is_empty() && !drop_symbol_indexes {
     return Err({
@@ -273,12 +273,12 @@ pub fn Archive::edit(
 
 ///|
 fn write_add(
-  total : Int,
-  amount : Int,
-  maximum : Int,
-  index : Int?,
+  total : Int32,
+  amount : Int32,
+  maximum : Int32,
+  index : Int32?,
   message : String,
-) -> Int raise InvalidWrite {
+) -> Int32 raise InvalidWrite {
   if amount > maximum - total {
     write_reject("WR003", index, message)
   }
@@ -287,11 +287,11 @@ fn write_add(
 
 ///|
 fn write_record_end(
-  offset : Int,
-  size : Int,
-  maximum : Int,
-  index : Int?,
-) -> Int raise InvalidWrite {
+  offset : Int32,
+  size : Int32,
+  maximum : Int32,
+  index : Int32?,
+) -> Int32 raise InvalidWrite {
   let offset = write_add(
     offset, 60, maximum, index, "archive byte limit exceeded",
   )
@@ -316,7 +316,7 @@ fn write_gnu_short_name(name : Bytes) -> Bool {
 }
 
 ///|
-fn write_field(output : @buffer.Buffer, text : Bytes, width : Int) -> Unit {
+fn write_field(output : @buffer.Buffer, text : Bytes, width : Int32) -> Unit {
   output.write_bytes(text[:])
   for i = text.length(); i < width; i = i + 1 {
     output.write_byte(b' ')
@@ -327,8 +327,8 @@ fn write_field(output : @buffer.Buffer, text : Bytes, width : Int) -> Unit {
 fn write_number_field(
   output : @buffer.Buffer,
   value : Int64?,
-  width : Int,
-  radix : Int,
+  width : Int32,
+  radix : Int32,
 ) -> Unit {
   let text = match value {
     None => b""
@@ -342,7 +342,7 @@ fn write_header(
   output : @buffer.Buffer,
   name : Bytes,
   metadata : Metadata,
-  size : Int,
+  size : Int32,
 ) -> Unit {
   write_field(output, name, 16)
   write_number_field(output, metadata.timestamp, 12, 10)
@@ -354,7 +354,7 @@ fn write_header(
 }
 
 ///|
-fn write_padding(output : @buffer.Buffer, size : Int) -> Unit {
+fn write_padding(output : @buffer.Buffer, size : Int32) -> Unit {
   if size % 2 == 1 {
     output.write_byte(b'\n')
   }
@@ -374,7 +374,7 @@ fn write_darwin_format(format : WriteFormat) -> Bool {
 }
 
 ///|
-fn write_index_width(format : WriteFormat) -> Int {
+fn write_index_width(format : WriteFormat) -> Int32 {
   match format {
     Gnu | Bsd | Darwin | Coff => 4
     Gnu64 | Bsd64 | Darwin64 => 8
@@ -384,8 +384,8 @@ fn write_index_width(format : WriteFormat) -> Int {
 ///|
 fn write_index_number(
   output : @buffer.Buffer,
-  value : Int,
-  width : Int,
+  value : Int32,
+  width : Int32,
   little : Bool,
 ) -> Unit {
   if width == 8 {
@@ -403,7 +403,7 @@ fn write_index_number(
 
 ///|
 // Avoid adding an untrusted name length to the absolute archive offset.
-fn write_name_padding(offset : Int, name_size : Int) -> Int {
+fn write_name_padding(offset : Int32, name_size : Int32) -> Int32 {
   (8 - (offset % 8 + 4 + name_size % 8) % 8) % 8
 }
 
@@ -419,15 +419,15 @@ fn write_name_padding(offset : Int, name_size : Int) -> Int {
 /// Limits count physical records, expanded names and final serialized bytes.
 pub fn ArchiveBuilder::write(
   self : ArchiveBuilder,
-  format? : WriteFormat = Gnu,
-  metadata? : WriteMetadata = Deterministic,
-  symbols? : Array[WriteSymbol]? = None,
-  index_little_endian? : Bool = true,
-  max_bytes? : Int = 67108864,
-  max_members? : Int = 100000,
-  max_name_bytes? : Int = 67108864,
-  max_symbols? : Int = 1000000,
-  max_symbol_name_bytes? : Int = 67108864,
+  format~ : WriteFormat = Gnu,
+  metadata~ : WriteMetadata = Deterministic,
+  symbols~ : Array[WriteSymbol]? = None,
+  index_little_endian~ : Bool = true,
+  max_bytes~ : Int32 = 67108864,
+  max_members~ : Int32 = 100000,
+  max_name_bytes~ : Int32 = 67108864,
+  max_symbols~ : Int32 = 1000000,
+  max_symbol_name_bytes~ : Int32 = 67108864,
 ) -> Result[Bytes, WriteError] {
   if format == Coff {
     return write_coff(
@@ -452,7 +452,7 @@ pub fn ArchiveBuilder::write(
     }
     let mut total_names = 0
     let mut table_size = 0
-    let name_offsets : Map[Bytes, Int] = Map([])
+    let name_offsets : Map[Bytes, Int32] = Map([])
     let table_names : Array[Bytes] = []
     for index, entry in self.members {
       write_member_valid(entry, index)
@@ -505,7 +505,7 @@ pub fn ArchiveBuilder::write(
     let mut index_size = 0
     let mut index_padding = 0
     let mut symbol_string_size = 0
-    let symbol_offsets : Array[Int] = []
+    let symbol_offsets : Array[Int32] = []
     let index_name = if bsd {
       if width == 8 {
         b"__.SYMDEF_64"
@@ -666,10 +666,10 @@ pub fn ArchiveBuilder::write(
     }
     ignore(count)
     ignore(total_names)
-    let headers : Array[Int] = []
-    let sizes : Array[Int] = []
-    let name_sizes : Array[Int] = []
-    let payload_paddings : Array[Int] = []
+    let headers : Array[Int32] = []
+    let sizes : Array[Int32] = []
+    let name_sizes : Array[Int32] = []
+    let payload_paddings : Array[Int32] = []
     for index, entry in self.members {
       headers.push(offset)
       let name_size = if bsd {

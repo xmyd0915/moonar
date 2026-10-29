@@ -19,27 +19,27 @@ pub extend Command with Debug::{to_repr}
 pub(all) struct Request {
   command : Command
   json_output : Bool
-  max_bytes : Int
-  max_members : Int
+  max_bytes : Int32
+  max_members : Int32
   logical : Bool
-  max_name_bytes : Int
-  max_symbols : Int
-  max_symbol_name_bytes : Int
+  max_name_bytes : Int32
+  max_symbols : Int32
+  max_symbol_name_bytes : Int32
   external : Bool
   allow_parent_paths : Bool
-  max_archive_bytes : Int
-  max_depth : Int
+  max_archive_bytes : Int32
+  max_depth : Int32
 }
 
 ///|
 pub(all) struct Reply {
-  exit_code : Int
+  exit_code : Int32
   stdout : String
   stderr : String
 }
 
 ///|
-fn limit_number(text : String) -> Int? {
+fn limit_number(text : String) -> Int32? {
   if text.is_empty() {
     return None
   }

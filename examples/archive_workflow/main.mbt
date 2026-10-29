@@ -16,7 +16,7 @@ fn[T] parsed(result : Result[T, @ar.ParseError]) -> T raise {
 
 ///|
 // The explicit allowlist supplies bytes; archive paths never open files here.
-fn resolve_thin(args : Array[String], start : Int) -> @ar.ThinArchive raise {
+fn resolve_thin(args : Array[String], start : Int32) -> @ar.ThinArchive raise {
   let archive = parsed(@ar.parse_thin(@fs.read_file_to_bytes(args[2])))
   let files : Map[Bytes, Bytes] = Map([])
   let mut i = start

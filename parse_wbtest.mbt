@@ -1,10 +1,10 @@
 ///|
-fn field(text : String, width : Int) -> String {
+fn field(text : String, width : Int32) -> String {
   text + " ".repeat(width - text.length())
 }
 
 ///|
-fn record(name : String, payload : Bytes, date? : String = "0") -> Bytes {
+fn record(name : String, payload : Bytes, date~ : String = "0") -> Bytes {
   let header = field(name, 16) +
     field(date, 12) +
     field("0", 6) +

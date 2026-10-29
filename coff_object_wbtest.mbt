@@ -1,10 +1,10 @@
 ///|
 fn coff_test_symbol(
   name : Bytes,
-  section : UInt,
-  value? : Int = 0,
-  storage? : Int = 2,
-  aux? : Int = 0,
+  section : UInt32,
+  value~ : Int32 = 0,
+  storage~ : Int32 = 2,
+  aux~ : Int32 = 0,
 ) -> Bytes {
   let symbol = @buffer.Buffer()
   symbol.write_bytes(name[:])
@@ -20,7 +20,7 @@ fn coff_test_symbol(
 }
 
 ///|
-fn coff_test_big(section_count? : Int = 1) -> Bytes {
+fn coff_test_big(section_count~ : Int32 = 1) -> Bytes {
   let out = @buffer.Buffer()
   out.write_bytes(b"\x00\x00\xff\xff\x02\x00\x64\x86"[:])
   out.write_int_le(0)
@@ -49,7 +49,7 @@ fn coff_test_big(section_count? : Int = 1) -> Bytes {
 }
 
 ///|
-fn coff_test_import(kind? : Int = 0, name_type? : Int = 1) -> Bytes {
+fn coff_test_import(kind~ : Int32 = 0, name_type~ : Int32 = 1) -> Bytes {
   let payload = b"_entry@4\x00example.dll\x00" +
     (if name_type == 4 { b"actual_export\x00" } else { b"" })
   b"\x00\x00\xff\xff\x00\x00\x64\x86" +

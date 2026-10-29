@@ -1,9 +1,9 @@
 ///|
 fn snapshot_thin(
   entries : Array[ThinWriteMember],
-  symbols? : Array[WriteSymbol]? = None,
-  width? : Int = 32,
-  metadata? : WriteMetadata = Deterministic,
+  symbols~ : Array[WriteSymbol]? = None,
+  width~ : Int32 = 32,
+  metadata~ : WriteMetadata = Deterministic,
 ) -> ThinArchive raise {
   thin_parsed(
     writer_ok(
